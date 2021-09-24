@@ -4,13 +4,13 @@ samurai_kv
 Simple in-memory key-value storage engine written in erlang. The storage uses Erlang Term Storage as a base, and supports multiple
 councrrent access from defferent clients.
 
-#Build
+# Build
 
 In order to build the application run the following command:
 
-```
+``` 
 $ rebar3 as prod release
-````
+```
 # Start of the application
 
 An example of the application startup is as follows:
