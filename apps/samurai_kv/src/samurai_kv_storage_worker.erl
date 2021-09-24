@@ -11,12 +11,12 @@
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
--define(SERVER, ?MODULE).
+% -define(SERVER, ?MODULE).
 
 -record(state, {max_keys, max_val_len}).
 
 start_link(Args) ->
-    gen_server:start_link({local,?SERVER}, ?MODULE, Args,[]). 
+    gen_server:start_link(?MODULE, Args,[]). 
 
 init(Args) ->
     MaxKeys = proplists:get_value(max_keys, Args),
@@ -24,18 +24,19 @@ init(Args) ->
     {ok,#state{max_keys = MaxKeys,
                max_val_len = MaxValueLen}}.
 
-handle_call({insert, Key, Value}, _From, State) ->
+handle_call({insert, Key, Value}, _From, #state{max_keys = MaxKeys, max_val_len = MaxValLen}=State) ->
     Reply = case ets:lookup(storage, Key) of
-                [] when byte_size(Value) < State#state.max_val_len -> 
-                    case ets:info(storage, size) < State#state.max_keys of
+                [] when byte_size(Value) < MaxValLen -> 
+                    case ets:info(storage, size) < MaxKeys of
                         true ->
                             ets:insert(storage, {Key, Value}),
                             {ok, <<"Key added">>};
                         false ->
                             {error, <<"Storage size exceeded">>}
                     end;
-                _ when byte_size(Value) < State#state.max_val_len ->
-                    ets:insert(storage, {Key, Value});
+                _ when byte_size(Value) < MaxValLen ->
+                    ets:insert(storage, {Key, Value}),
+                    {ok, <<"Key changed">>};
                 _ ->
                     {error, <<"Maximal value length exceeded">>}
     end,

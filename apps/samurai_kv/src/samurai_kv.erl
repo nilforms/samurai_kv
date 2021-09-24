@@ -7,14 +7,14 @@
          get/2
 ]).
 
-connect(Peer) ->
-    samurai_kv_pool_worker:connect(Peer).
-disconnect(Peer) ->
-    samurai_kv_pool_worker:disconnect(Peer).
-insert(Peer, Key, Value) ->
-    samurai_kv_pool_worker:insert(Peer, Key, Value).
+connect(Client) ->
+    samurai_kv_pool_worker:connect(Client).
+disconnect(Client) ->
+    samurai_kv_pool_worker:disconnect(Client).
+insert(Client, Key, Value) ->
+    samurai_kv_pool_worker:insert(Client, Key, Value).
 
-delete(Peer, Key) ->
-    samurai_kv_pool_worker:delete(Peer, Key).
-get(Peer, Key) ->
-    samurai_kv_pool_worker:get(Peer, Key).
+delete(Client, Key) ->
+    samurai_kv_pool_worker:delete(Client, Key).
+get(Client, Key) ->
+    samurai_kv_pool_worker:get(Client, Key).

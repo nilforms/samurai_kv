@@ -26,26 +26,28 @@
 -record(state, {limit}).
 
 
-connect(Peer) ->
-    gen_server:call(?SERVER,{connect, Peer}).
-disconnect(Peer) ->
-    gen_server:call(?SERVER, {disconnect, Peer}).
-insert(Peer, Key, Value) ->
-    case ets:lookup(subscriptions, Peer) of
-        [] -> {error, <<"Peer not connected">>};
+connect(Client) ->
+    gen_server:call(?SERVER,{connect, Client}).
+disconnect(Client) ->
+    gen_server:call(?SERVER, {disconnect, Client}).
+insert(Client, Key, Value) when is_binary(Value) ->
+    case ets:lookup(subscriptions, Client) of
+        [] -> {error, <<"Client not connected">>};
         [{_, Worker}] ->
             gen_server:call(Worker,{insert, Key, Value})
-    end.
+    end;
+insert(_, _, _) ->
+    {error, <<"Wrong value format">>}.
 
-delete(Peer, Key) ->
-    case ets:lookup(subscriptions, Peer) of
-        [] -> {error, <<"Peer not connected">>};
+delete(Client, Key) ->
+    case ets:lookup(subscriptions, Client) of
+        [] -> {error, <<"Client not connected">>};
         [{_, Worker}] ->
             gen_server:call(Worker,{delete, Key})
     end.
-get(Peer, Key) ->
-    case ets:lookup(subscriptions, Peer) of
-        [] -> {error, <<"Peer not connected">>};
+get(Client, Key) ->
+    case ets:lookup(subscriptions, Client) of
+        [] -> {error, <<"Client not connected">>};
         [{_, Worker}] ->
             gen_server:call(Worker, {get, Key})
     end.
@@ -61,19 +63,25 @@ init(Args) ->
     
     {ok,#state{limit = Limit}}.
 handle_call({connect, _}, _From, #state{limit = 0} = State) ->
-    {reply,{error, <<"Number of peers exceeded">>}, State};
+    {reply,{error, <<"Number of Clients exceeded">>}, State};
 
-handle_call({connect, Peer}, _From, #state{limit = Limit} = State) ->
-    {ok, W} = samurai_kv_storage_sup:start_worker(),
-    ets:insert(subscriptions, {Peer, W}),
-    {reply,{ok, <<"Peer connected">>}, State#state{limit = Limit -1}};
-handle_call({disconnect, Peer}, _From, #state{limit = Limit}=State) ->
-    {Reply, NewState}  = case ets:lookup(subscriptions,Peer) of 
+handle_call({connect, Client}, _From, #state{limit = Limit} = State) ->
+    {Reply, NewLimit} = case ets:lookup(subscriptions, Client) of 
+                            [] ->
+                                {ok, W} = samurai_kv_storage_sup:start_worker(),
+                                ets:insert(subscriptions, {Client, W}),
+                                {{ok, <<"Client connected">>}, Limit-1};
+                            _->
+                                {{error, <<"Client already connected">>}, Limit}
+                        end,
+    {reply,Reply, State#state{limit = NewLimit}};
+handle_call({disconnect, Client}, _From, #state{limit = Limit}=State) ->
+    {Reply, NewState}  = case ets:lookup(subscriptions,Client) of 
         [] -> { {error, <<"Empty connection">>}, State};
-        [{Peer, W}] ->
+        [{Client, W}] ->
             samurai_kv_storage_sup:stop_worker(W),
-            ets:delete(subscriptions, Peer),
-            {{ok, <<"Peer disconnected">>}, State#state{limit = Limit +1}}
+            ets:delete(subscriptions, Client),
+            {{ok, <<"Client disconnected">>}, State#state{limit = Limit +1}}
     end, 
     {reply,Reply, NewState};
 handle_call(Request, _From, State) ->
