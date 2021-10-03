@@ -1,3 +1,17 @@
+% Copyright 2021, Shaikhrozy Zaidullin  <shaykhrozy@gmail.com>.
+
+% Licensed under the Apache License, Version 2.0 (the "License");
+% you may not use this file except in compliance with the License.
+% You may obtain a copy of the License at
+
+%     http://www.apache.org/licenses/LICENSE-2.0
+
+% Unless required by applicable law or agreed to in writing, software
+% distributed under the License is distributed on an "AS IS" BASIS,
+% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+% See the License for the specific language governing permissions and
+% limitations under the License.
+
 %%%-------------------------------------------------------------------
 %% @doc samurai_kv storage worker.
 %% @end
@@ -43,7 +57,7 @@ handle_call({insert, Key, Value}, _From, #state{max_keys = MaxKeys, max_val_len 
     {reply, Reply, State};
 handle_call({delete, Key}, _From, State) ->
     ets:delete(storage, Key),
-    {reply, {ok,"Key deleted"}, State};
+    {reply, {ok,<<"Key deleted">>}, State};
 handle_call({get, Key}, _From, State) ->
     Reply = case ets:lookup(storage, Key) of
         [] ->
@@ -52,6 +66,8 @@ handle_call({get, Key}, _From, State) ->
             {ok, Value}
     end,
     {reply, Reply, State};
+handle_call(get_all, _From, State) ->
+    {reply, {ok, ets:tab2list(storage)}, State};
 handle_call(Request, _From, State) ->
     logger:info("Request ~p  from ~p received", [Request,_From]),
     {reply, ok, State}.

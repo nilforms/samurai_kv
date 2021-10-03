@@ -34,6 +34,7 @@ connect(Client) - connects the Client to storage
 insert(Client, Key, Value) - adds new Key-Value pair to storage or updates Value of exisitng key, if Client is connected
 delete(Client, Key) - removes the Key from storage, if Client is connected
 get(Client, Key) - returns Key from storage if Key exists, and if Client is connected
+get_all(Client) - returns all Key-Value pairs for Client
 disconnect(Client) - disconnects Client from storage 
 ```
 
@@ -52,7 +53,15 @@ curl -d '{"nam":"linux"}' -N -H "Content-Type:application/json" -X POST  -i  htt
 Access to value of specific key may be got as follows
 
 ```
-curl -s -N -d '{"key":"nam"}' -H "Accept:application/x-ld-json" -X GET  -i  http://localhost:8181/test-api
+curl -s -N -d '{"key":"nam"}' -H "Content-Type:application/json" -X GET  -i  http://localhost:8181/test-api
 ```
     where "nam" is an example name of key to be accessed. Remember, that keyword "key" is mandatory when accessing 
-    spesific key.
+    specific key.
+
+To remove a specific key from strorage do the following:
+
+```
+curl -s -N -d '{"key":"nam"}' -H "Content-Type:application/json" -X DELETE  -i  http://localhost:8181/test-api
+```
+    where "nam" is an example name of key to be accessed. Remember, that keyword "key" is mandatory when accessing 
+    specific key.
