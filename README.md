@@ -20,13 +20,13 @@ MAX_KEYS=1000 MAX_VAL_LEN=10240 NUM_CONNECTIONS=1000 HTTP_PORT=8181 path-to-samu
 ```
 where 
     
-    MAX_KEYS - is maximal possible number of keys (also limited by ets table size)
-    
-    MAX_VAL_LEN - is maximal possible value byte size
-    
-    NUM_CONNECTIONS - is an upper limit of clients, which can connect to the storage concurrently
-    
-    HTTP_PORT - is a listening port of HTTP reference point
+MAX_KEYS - is a maximal possible number of keys (also limited by ets table size)
+
+MAX_VAL_LEN - is a maximal possible value byte size
+
+NUM_CONNECTIONS - is an upper limit of clients, which can connect to the storage concurrently
+
+HTTP_PORT - is a listening port of HTTP reference point
 
 # Accessing storage
 
@@ -52,20 +52,20 @@ The key-value pair may be stored as follows:
 ```
 curl -d '{"nam":"linux"}' -N -H "Content-Type:application/json" -X POST  -i  http://localhost:8181/test-api/
 ```
-    where {"nam":"linux"} - is an exmaple JSON with key-value pair to be stored.
+where {"nam":"linux"} - is an exmaple JSON with key-value pair to be stored.
 
 Access to value of specific key may be got as follows
 
 ```
 curl -s -N -d '{"key":"nam"}' -H "Content-Type:application/json" -X GET  -i  http://localhost:8181/test-api
 ```
-    where "nam" is an example name of key to be accessed. Remember, that keyword "key" is mandatory when accessing 
-    specific key.
+where "nam" is an example name of key to be accessed. Remember, that keyword "key" is mandatory when accessing 
+specific key.
 
 To remove a specific key from strorage do the following:
 
 ```
 curl -s -N -d '{"key":"nam"}' -H "Content-Type:application/json" -X DELETE  -i  http://localhost:8181/test-api
 ``` 
-    where "nam" is an example name of key to be accessed. Remember, that keyword "key" is mandatory when accessing 
-    specific key.
+where "nam" is an example name of key to be accessed. Remember, that keyword "key" is mandatory when accessing 
+specific key.
