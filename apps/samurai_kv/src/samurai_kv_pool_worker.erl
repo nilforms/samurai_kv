@@ -90,6 +90,7 @@ handle_call({connect, Client}, _From, #state{limit = Limit} = State) ->
     {Reply, NewLimit} = case ets:lookup(subscriptions, Client) of 
                             [] ->
                                 {ok, W} = samurai_kv_storage_sup:start_worker(),
+                                erlang:monitor(process, W),
                                 ets:insert(subscriptions, {Client, W}),
                                 {{ok, <<"Client connected">>}, Limit-1};
                             _->
@@ -112,7 +113,14 @@ handle_call(Request, _From, State) ->
 handle_cast(Msg, State) ->
     logger:info("Request ~p received", [Msg]),
     {noreply, State}.
-
+handle_info({'DOWN', Mref, process, W, Reason}, #state{limit = Limit} = State) ->
+    erlang:demonitor(Mref),
+    [[Client]] = ets:match(subscriptions, {'$1', W}),
+    samurai_kv_storage_sup:stop_worker(W),
+    ets:delete(subscriptions, Client),
+    logger:info("Client ~p disconnected because of reason ~p", [Client, Reason]),
+    {noreply, State#state{limit = Limit +1}};
+  
 handle_info(Info, State) ->
     logger:info("Info ~p received", [Info]),
     {noreply, State}.
