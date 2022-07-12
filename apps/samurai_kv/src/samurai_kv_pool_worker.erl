@@ -115,10 +115,13 @@ handle_cast(Msg, State) ->
     {noreply, State}.
 handle_info({'DOWN', Mref, process, W, Reason}, #state{limit = Limit} = State) ->
     erlang:demonitor(Mref),
-    [[Client]] = ets:match(subscriptions, {'$1', W}),
-    samurai_kv_storage_sup:stop_worker(W),
-    ets:delete(subscriptions, Client),
-    logger:info("Client ~p disconnected because of reason ~p", [Client, Reason]),
+    case ets:match(subscriptions, {'$1', W}) of
+        [] -> ok;
+        [[Client]] -> 
+            samurai_kv_storage_sup:stop_worker(W),
+            ets:delete(subscriptions, Client),
+            logger:info("Client ~p disconnected because of reason ~p", [Client, Reason])
+    end,
     {noreply, State#state{limit = Limit +1}};
   
 handle_info(Info, State) ->

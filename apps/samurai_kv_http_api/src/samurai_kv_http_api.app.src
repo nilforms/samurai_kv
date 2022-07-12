@@ -4,7 +4,8 @@
   {registered, []},
   {mod, {samurai_kv_http_api_app, []}},
   {applications,
-   [kernel,
+   [
+    kernel,
     stdlib,
     cowboy,
     ranch,

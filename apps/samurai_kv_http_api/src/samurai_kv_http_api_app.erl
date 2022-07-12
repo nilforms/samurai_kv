@@ -26,12 +26,15 @@
 start(_StartType, _StartArgs) ->
     {ok, Port} = application:get_env(samurai_kv_http_api, http_port),
     Dispatch = cowboy_router:compile([
-		{'_', [
-			{"/test-api", samurai_kv_http_api_rest_handler, [on_demand]},
-			{"/test-api/stream", samurai_kv_http_api_rest_handler, [stream]}
+		{'_', [{"/", samurai_kv_http_api_rest_urlenc_handler, []},
+			{"/cache", samurai_kv_http_api_rest_urlenc_handler, []},
+			{"/cache_json", samurai_kv_http_api_rest_json_handler, []}
 		]}
 	]),
-	{ok, _} = cowboy:start_clear(samurai_http, [{port, Port}], #{env => #{dispatch => Dispatch}, protocols => [http|http2]}),
+	{ok, _} = cowboy:start_clear(samurai_http, 
+								[{port, Port}], 
+								#{env => #{dispatch => Dispatch}, 
+								protocols => [http|http2]}),
     samurai_kv_http_api_sup:start_link().
 
 stop(_State) ->

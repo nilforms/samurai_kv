@@ -63,11 +63,15 @@ handle_call({get, Key}, _From, State) ->
         [] ->
             {error, <<"Key doesn't exist">>};
         [{Key, Value}] ->
-            {ok, Value}
+            {ok, {Key,Value}}
     end,
     {reply, Reply, State};
 handle_call(get_all, _From, State) ->
-    {reply, {ok, ets:tab2list(storage)}, State};
+    Reply = case ets:tab2list(storage) of
+        [] -> <<"Empty storage">>;
+        List -> List
+    end,
+    {reply, {ok, Reply}, State};
 handle_call(Request, _From, State) ->
     logger:info("Request ~p  from ~p received", [Request,_From]),
     {reply, ok, State}.

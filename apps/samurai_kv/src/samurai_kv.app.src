@@ -8,7 +8,8 @@
     stdlib,
     cowboy,
     ranch,
-    jiffy
+    jiffy,
+    samurai_kv_http_api
    ]},
   {env,[]},
   {modules, []},
