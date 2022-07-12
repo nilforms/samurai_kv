@@ -93,8 +93,7 @@ delete_resource(#{method :=<<"DELETE">>} = Req, State) ->
 				Reply =samurai_kv:delete(Peer, Key),
 				make_response(Reply, Req2)
 			catch
-				_:Error:_ ->
-					io:format("~p ~n", [Error]),
+				_:_:_ ->
 					make_response({error, <<"Wrong data format">>}, Req)
 			end,
 	{stop, Resp, State};
