@@ -1,8 +1,8 @@
 samurai_kv
 =====
 
-Simple in-memory key-value storage engine written in erlang. The storage uses Erlang Term Storage as a base, and supports multiple
-councrrent access from defferent clients.
+Simple in-memory key-value storage engine written in erlang. The storage uses Erlang Term Storage as a base, and supports
+concurrent multiple access from defferent clients.
 
 # Build
 
