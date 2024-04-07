@@ -24,110 +24,95 @@
 
 -export([start_link/1]).
 
--export([init/1, 
-        handle_call/3, 
-        handle_cast/2, 
-        handle_info/2, 
-        terminate/2]).
--export([insert/3,
-         delete/2,
-         connect/1,
-         disconnect/1,
-         get/2,
-         get_all/1
-]).
+-export([
+         init/1, 
+         handle_call/3, 
+         handle_cast/2, 
+         handle_info/2, 
+         terminate/2
+        ]).
+-export([
+         add/2,
+         update/2,
+         delete/1,
+         get/1,
+         get_all/0
+        ]).
 
 -define(SERVER, ?MODULE).
 
--record(state, {limit}).
+add(Key, Value) when is_binary(Value) ->
+    procedure(?FUNCTION_NAME, [Key, Value]);   
+add(_Key, _Value) ->
+    {error, format}.
 
+update(Key, Value) when is_binary(Value) ->
+    procedure(?FUNCTION_NAME, [Key, Value]);   
+update(_Key, _Value) ->
+    {error, format}.
 
-connect(Client) ->
-    gen_server:call(?SERVER,{connect, Client}).
-disconnect(Client) ->
-    gen_server:call(?SERVER, {disconnect, Client}).
-insert(Client, Key, Value) when is_binary(Value) ->
-    case ets:lookup(subscriptions, Client) of
-        [] -> {error, <<"Client not connected">>};
-        [{_, Worker}] ->
-            gen_server:call(Worker,{insert, Key, Value})
-    end;
-insert(_, _, _) ->
-    {error, <<"Wrong value format">>}.
+delete(Key) ->
+    procedure(?FUNCTION_NAME, [Key]).
 
-delete(Client, Key) ->
-    case ets:lookup(subscriptions, Client) of
-        [] -> {error, <<"Client not connected">>};
-        [{_, Worker}] ->
-            gen_server:call(Worker,{delete, Key})
-    end.
-get(Client, Key) ->
-    case ets:lookup(subscriptions, Client) of
-        [] -> {error, <<"Client not connected">>};
-        [{_, Worker}] ->
-            gen_server:call(Worker, {get, Key})
-    end.
-get_all(Client) ->
-    case ets:lookup(subscriptions, Client) of
-        [] -> {error, <<"Client not connected">>};
-        [{_, Worker}] ->
-            gen_server:call(Worker, get_all)
-    end.
+get(Key) ->
+    procedure(?FUNCTION_NAME, [Key]).
+get_all() ->
+    procedure(?FUNCTION_NAME, []).
+
 start_link(Args) ->
     gen_server:start_link({local,?SERVER}, ?MODULE, Args,[]). 
 
 init(Args) ->
-    Limit = case ets:info(subscriptions, size) of
-        0 -> proplists:get_value(num_connections, Args);
-        Num -> Num
-    end,
-    
-    {ok,#state{limit = Limit}}.
-handle_call({connect, _}, _From, #state{limit = 0} = State) ->
-    {reply,{error, <<"Number of Clients exceeded">>}, State};
+    Limit = proplists:get_value(num_connections, Args),
+    {ok, #{limit => Limit}}.
 
-handle_call({connect, Client}, _From, #state{limit = Limit} = State) ->
-    {Reply, NewLimit} = case ets:lookup(subscriptions, Client) of 
-                            [] ->
-                                {ok, W} = samurai_kv_storage_sup:start_worker(),
-                                erlang:monitor(process, W),
-                                ets:insert(subscriptions, {Client, W}),
-                                {{ok, <<"Client connected">>}, Limit-1};
-                            _->
-                                {{error, <<"Client already connected">>}, Limit}
-                        end,
-    {reply,Reply, State#state{limit = NewLimit}};
-handle_call({disconnect, Client}, _From, #state{limit = Limit}=State) ->
-    {Reply, NewState}  = case ets:lookup(subscriptions,Client) of 
-        [] -> { {error, <<"Empty connection">>}, State};
-        [{Client, W}] ->
-            samurai_kv_storage_sup:stop_worker(W),
-            ets:delete(subscriptions, Client),
-            {{ok, <<"Client disconnected">>}, State#state{limit = Limit +1}}
-    end, 
-    {reply,Reply, NewState};
-handle_call(Request, _From, State) ->
-    logger:info("Request ~p  from ~p received", [Request,_From]),
+handle_call(get_worker, _From, #{limit := 0} = State) ->
+    {reply, {error, overload}, State};
+handle_call(get_worker, _From, #{limit := Limit} = State) ->
+    Reply = samurai_kv_storage_sup:start_worker(),
+    {reply, Reply, State#{limit => Limit - 1}};
+handle_call(Request, From, State) ->
+    logger:info("Request ~p  from ~p received", [Request, From]),
     {reply, ok, State}.
 
 handle_cast(Msg, State) ->
     logger:info("Request ~p received", [Msg]),
     {noreply, State}.
-handle_info({'DOWN', Mref, process, W, Reason}, #state{limit = Limit} = State) ->
+
+handle_info({'DOWN', _Mref, process, _W, normal}, #{limit := Limit} = State) ->
+    {noreply, State#{limit => Limit + 1}};
+handle_info({'DOWN', Mref, process, W, _Reason}, #{limit := Limit} = State) ->
     erlang:demonitor(Mref),
-    case ets:match(subscriptions, {'$1', W}) of
-        [] -> ok;
-        [[Client]] -> 
-            samurai_kv_storage_sup:stop_worker(W),
-            ets:delete(subscriptions, Client),
-            logger:info("Client ~p disconnected because of reason ~p", [Client, Reason])
-    end,
-    {noreply, State#state{limit = Limit +1}};
+    samurai_kv_storage_sup:stop_worker(W),
+    {noreply, State#{limit => Limit + 1}};
   
 handle_info(Info, State) ->
     logger:info("Info ~p received", [Info]),
     {noreply, State}.
 
-terminate(Reason, _) ->
+terminate(Reason, _State) ->
     logger:info("Process ~p terminated with reason ~p", [?MODULE, Reason]),
     ok.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Internal Functions
+%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec procedure(Method, Args) -> Result when
+    Method :: function(),
+    Args   :: tuple(),
+    Result :: {ok, term()} | {error, term()}.
+procedure(Method, Args) ->
+    Request = case Args of
+        [] -> 
+            Method;
+        ArgList ->
+            list_to_tuple([Method] ++ ArgList)
+        end,
+    case gen_server:call(?SERVER, get_worker) of
+        {ok, W} ->
+            gen_server:call(W, Request);
+        Msg ->
+            Msg
+    end.

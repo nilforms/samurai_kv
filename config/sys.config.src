@@ -1,11 +1,14 @@
 [
-  {samurai_kv_http_api,[{http_port, ${HTTP_PORT}}]
+  {
+    samurai_kv_http_api, [
+                          {http_port, ${HTTP_PORT}},
+                          {max_val_len, ${MAX_VAL_LEN}}
+                         ]
   },
-  {samurai_kv, 
-              [{max_keys, ${MAX_KEYS}},
-               {max_val_len, ${MAX_VAL_LEN}},
-               {num_connections, ${NUM_CONNECTIONS}}
-              ]
+  {
+    samurai_kv, [
+                  {max_keys, ${MAX_KEYS}},
+                  {num_connections, ${NUM_CONNECTIONS}}
+                ]
   }
-
 ].

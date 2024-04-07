@@ -34,5 +34,4 @@ stop(_State) ->
 %% internal functions
 
 create_ets_tabs() ->
-    ets:new(subscriptions, [set, named_table,public]),
-    ets:new(storage,[set, named_table, public, {write_concurrency, true},{read_concurrency, true}]).
+    ets:new(storage,[set, named_table, public, {write_concurrency, true}, {read_concurrency, true}]).

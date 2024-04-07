@@ -15,24 +15,25 @@
 
 -module(samurai_kv).
 
--export([insert/3,
-         delete/2,
-         connect/1,
-         disconnect/1,
-         get/2,
-         get_all/1
-]).
+-export([
+         add/2,
+         update/2,
+         delete/1,
+         get/1,
+         get_all/0
+        ]).
 
-connect(Client) ->
-    samurai_kv_pool_worker:connect(Client).
-disconnect(Client) ->
-    samurai_kv_pool_worker:disconnect(Client).
-insert(Client, Key, Value) ->
-    samurai_kv_pool_worker:insert(Client, Key, Value).
+add(Key, Value) ->
+    samurai_kv_pool_worker:add(Key, Value).
 
-delete(Client, Key) ->
-    samurai_kv_pool_worker:delete(Client, Key).
-get(Client, Key) ->
-    samurai_kv_pool_worker:get(Client, Key).
-get_all(Client) ->
-    samurai_kv_pool_worker:get_all(Client).
+update(Key, Value) ->
+    samurai_kv_pool_worker:update(Key, Value).
+
+delete(Key) ->
+    samurai_kv_pool_worker:delete(Key).
+
+get(Key) ->
+    samurai_kv_pool_worker:get(Key).
+
+get_all() ->
+    samurai_kv_pool_worker:get_all().

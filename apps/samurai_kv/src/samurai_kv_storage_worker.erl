@@ -23,58 +23,59 @@
 
 -export([start_link/1]).
 
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([
+        init/1, 
+        handle_call/3, 
+        handle_cast/2, 
+        handle_info/2,
+        handle_continue/2, 
+        terminate/2
+        ]).
 
-% -define(SERVER, ?MODULE).
+-define(SERVER, ?MODULE).
 
--record(state, {max_keys, max_val_len}).
+-type state() :: #{max_keys => non_neg_integer()}.
 
 start_link(Args) ->
-    gen_server:start_link(?MODULE, Args,[]). 
+    gen_server:start_link(?SERVER, Args,[]). 
 
+-spec init(Args) -> Result when
+    Args   :: list(),
+    Result :: {ok, state()}.
 init(Args) ->
     MaxKeys = proplists:get_value(max_keys, Args),
-    MaxValueLen = proplists:get_value(max_val_len, Args),
-    {ok,#state{max_keys = MaxKeys,
-               max_val_len = MaxValueLen}}.
+    {ok, #{max_keys => MaxKeys}}.
 
-handle_call({insert, Key, Value}, _From, #state{max_keys = MaxKeys, max_val_len = MaxValLen}=State) ->
-    Reply = case ets:lookup(storage, Key) of
-                [] when byte_size(Value) < MaxValLen -> 
-                    case ets:info(storage, size) < MaxKeys of
-                        true ->
-                            ets:insert(storage, {Key, Value}),
-                            {ok, <<"Key added">>};
-                        false ->
-                            {error, <<"Storage size exceeded">>}
-                    end;
-                _ when byte_size(Value) < MaxValLen ->
-                    ets:insert(storage, {Key, Value}),
-                    {ok, <<"Key changed">>};
-                _ ->
-                    {error, <<"Maximal value length exceeded">>}
-    end,
-    {reply, Reply, State};
+handle_call({add, _Key, _Value} = Request, From, #{max_keys := MaxKeys} = State) ->
+    case ets:info(storage, size) < MaxKeys of
+        true ->
+            {noreply, State, {continue, {From, Request}}};
+        false ->
+            {stop, normal, {error, oversize}, State}
+    end;
+handle_call({update, Key, Value}, _From, State) ->
+    ets:update_element(storage, Key, [{2, Value}]),
+    {stop, normal, updated, State};
 handle_call({delete, Key}, _From, State) ->
     ets:delete(storage, Key),
-    {reply, {ok,<<"Key deleted">>}, State};
+    {stop, normal, {ok, deleted}, State};
 handle_call({get, Key}, _From, State) ->
     Reply = case ets:lookup(storage, Key) of
-        [] ->
-            {error, <<"Key doesn't exist">>};
-        [{Key, Value}] ->
-            {ok, {Key,Value}}
-    end,
-    {reply, Reply, State};
+                [] ->
+                    no_key;
+                Item ->
+                    {ok, Item}
+            end,
+    {stop, normal, Reply, State};
 handle_call(get_all, _From, State) ->
     Reply = case ets:tab2list(storage) of
-        [] -> <<"Empty storage">>;
+        [] -> {result, storage_empty};
         List -> List
     end,
-    {reply, {ok, Reply}, State};
-handle_call(Request, _From, State) ->
-    logger:info("Request ~p  from ~p received", [Request,_From]),
-    {reply, ok, State}.
+    {stop, normal, Reply, State};
+handle_call(Request, From, State) ->
+    logger:info("Request ~p  from ~p received", [Request, From]),
+    {noreply, State}.
 
 handle_cast(Msg, State) ->
     logger:info("Request ~p received", [Msg]),
@@ -84,6 +85,18 @@ handle_info(Info, State) ->
     logger:info("Info ~p received", [Info]),
     {noreply, State}.
 
-terminate(Reason, _) ->
+handle_continue({From, {add, Key, Value}}, State) ->
+    Reply = case ets:insert_new(storage, {Key, Value}) of
+                true -> 
+                    added;                     
+                false ->
+                    already_exists
+            end,
+    gen_server:reply(From, Reply),
+    {stop, normal, State};
+handle_continue(_Continue, State) ->
+    {noreply, State}.
+
+terminate(Reason, _State) ->
     logger:info("Process ~p terminated with reason ~p", [?MODULE, Reason]),
     ok.

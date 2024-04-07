@@ -20,8 +20,10 @@
 
 -export([init/1]).
 
--export([start_worker/0,
-        stop_worker/1]).
+-export([
+        start_worker/0,
+        stop_worker/1
+        ]).
 
 -define(SERVER, ?MODULE).
 
@@ -41,10 +43,12 @@ init([]) ->
     SupFlags = #{strategy => simple_one_for_one,
                  intensity => 10,
                  period => 10},
-    ChildSpecs = [#{id => samurai_kv_storage_worker,       % mandatory
-                 start => {samurai_kv_storage_worker, start_link, []},      % mandatory
-                 restart => temporary,   % optional
-                 shutdown => 5000, % optional
-                 type => worker,       % optional
-                 modules => []}],
+    ChildSpecs = [
+                 #{id => samurai_kv_storage_worker,      
+                   start => {samurai_kv_storage_worker, start_link, []},
+                   restart => temporary, 
+                   shutdown => 5000, 
+                   type => worker,       
+                   modules => []}
+                ],
     {ok, {SupFlags, ChildSpecs}}.
