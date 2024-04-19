@@ -27,28 +27,38 @@
 
 -define(SERVER, ?MODULE).
 
+-spec start_link() -> supervisor:startlink_ret().
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+	supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
+-spec start_worker()-> Return when
+	Return :: supervisor:startchild_ret() | supervisor:startchild_err().
 start_worker() ->
-    Env = application:get_all_env(samurai_kv),
-    supervisor:start_child(?MODULE, [Env]).
-  
-  %%-spec stop_handler(pid()) -> ok | {error, not_found}.
-stop_worker(Pid) ->
-    supervisor:terminate_child(?MODULE, Pid).
-  
-  
+	Env = application:get_all_env(samurai_kv),
+	supervisor:start_child(?MODULE, [Env]).
+
+-spec stop_worker(Child) -> Return when
+	Child  :: supervisor:child(),
+	Return :: ok | {error, Error},
+	Error  :: not_found | simple_one_for_one.
+stop_worker(Child) ->
+	supervisor:terminate_child(?MODULE, Child).
+
+-spec init(Args) -> Return when
+	Args       :: term(),
+	SupFlags   :: supervisor:sup_flags(),
+	ChildSpecs :: [supervisor:child_spec()],
+	Return     :: ignore | {ok, {SupFlags, ChildSpecs}}.
 init([]) ->
-    SupFlags = #{strategy => simple_one_for_one,
-                 intensity => 10,
-                 period => 10},
-    ChildSpecs = [
-                 #{id => samurai_kv_storage_worker,      
-                   start => {samurai_kv_storage_worker, start_link, []},
-                   restart => temporary, 
-                   shutdown => 5000, 
-                   type => worker,       
-                   modules => []}
-                ],
-    {ok, {SupFlags, ChildSpecs}}.
+	SupFlags = #{strategy => simple_one_for_one,
+				 intensity => 10,
+				 period => 10},
+	ChildSpecs = [
+				  #{id => samurai_kv_storage_worker,      
+				    start => {samurai_kv_storage_worker, start_link, []},
+					restart => temporary, 
+					shutdown => 5000, 
+					type => worker,       
+					modules => []}
+				 ],
+	{ok, {SupFlags, ChildSpecs}}.

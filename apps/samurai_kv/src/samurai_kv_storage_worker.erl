@@ -19,6 +19,8 @@
 
 -module(samurai_kv_storage_worker).
 
+-include("samurai_kv.hrl").
+
 -behaviour(gen_server).
 
 -export([start_link/1]).
@@ -34,41 +36,58 @@
 
 -define(SERVER, ?MODULE).
 
+%% State of the storage worker
 -type state() :: #{max_keys => non_neg_integer()}.
 
 start_link(Args) ->
     gen_server:start_link(?SERVER, Args,[]). 
 
--spec init(Args) -> Result when
-    Args   :: list(),
-    Result :: {ok, state()}.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% 
+%%% Gen Server Callbacks
+%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec init(Args) -> Return when
+    Args   :: term(),
+    Return :: {ok, state()}.
 init(Args) ->
     MaxKeys = proplists:get_value(max_keys, Args),
     {ok, #{max_keys => MaxKeys}}.
 
+-spec handle_call(Request, From, State) -> Return when
+    Request :: term(),
+    From    :: gen_server:from(),
+    State   :: state(),
+    Return  :: {reply, term(), state()}
+            | {noreply, state(),{continue, term()}}
+            | {stop, term(), term(), state()}.
 handle_call({add, _Key, _Value} = Request, From, #{max_keys := MaxKeys} = State) ->
-    case ets:info(storage, size) < MaxKeys of
+    case ets:info(?storage_table, size) < MaxKeys of
         true ->
             {noreply, State, {continue, {From, Request}}};
         false ->
             {stop, normal, {error, oversize}, State}
     end;
 handle_call({update, Key, Value}, _From, State) ->
-    ets:update_element(storage, Key, [{2, Value}]),
-    {stop, normal, updated, State};
+    Reply = case ets:update_element(?storage_table, Key, [{2, Value}]) of
+                true  -> {ok, updated};
+                false -> {error, 'key not found'}
+            end,
+    {stop, normal, Reply, State};
 handle_call({delete, Key}, _From, State) ->
-    ets:delete(storage, Key),
+    ets:delete(?storage_table, Key),
     {stop, normal, {ok, deleted}, State};
 handle_call({get, Key}, _From, State) ->
-    Reply = case ets:lookup(storage, Key) of
+    Reply = case ets:lookup(?storage_table, Key) of
                 [] ->
-                    no_key;
+                    {error, no_key};
                 Item ->
                     {ok, Item}
             end,
     {stop, normal, Reply, State};
 handle_call(get_all, _From, State) ->
-    Reply = case ets:tab2list(storage) of
+    Reply = case ets:tab2list(?storage_table) of
         [] -> {result, storage_empty};
         List -> List
     end,
@@ -77,26 +96,41 @@ handle_call(Request, From, State) ->
     logger:info("Request ~p  from ~p received", [Request, From]),
     {noreply, State}.
 
+-spec handle_cast(Msg, State) -> Return when
+	Msg    :: term(),
+	State  :: state(),
+	Return :: {noreply, state()}.
 handle_cast(Msg, State) ->
     logger:info("Request ~p received", [Msg]),
     {noreply, State}.
 
+-spec handle_info(Info, State) -> Return when
+    Info   :: term(),
+    State  :: state(),
+    Return :: {noreply, state()}.
 handle_info(Info, State) ->
     logger:info("Info ~p received", [Info]),
     {noreply, State}.
 
+-spec handle_continue(Continue, State) -> Return when
+    Continue   :: term(),
+    State      :: state(),
+    Return     :: {noreply, state()} | {stop, term(), state()}.
 handle_continue({From, {add, Key, Value}}, State) ->
-    Reply = case ets:insert_new(storage, {Key, Value}) of
+    Reply = case ets:insert_new(?storage_table, {Key, Value}) of
                 true -> 
-                    added;                     
+                    {ok, added};                     
                 false ->
-                    already_exists
+                    {error, already_exists}
             end,
     gen_server:reply(From, Reply),
     {stop, normal, State};
 handle_continue(_Continue, State) ->
     {noreply, State}.
 
+-spec terminate(Reason, State) -> ok when
+    Reason :: term(),
+    State  :: state().
 terminate(Reason, _State) ->
     logger:info("Process ~p terminated with reason ~p", [?MODULE, Reason]),
     ok.

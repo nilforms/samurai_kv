@@ -26,6 +26,12 @@
          stop/1
 		]).
 
+-spec start(StartType, StartArgs) -> Return when
+	StartType :: application:start_type(), 
+	StartArgs :: term(),
+	Return    ::   {'ok', pid()} 
+                 | {'ok', pid(), term()} 
+                 | {'error', term()}.
 start(_StartType, _StartArgs) ->
     {ok, Port} = application:get_env(samurai_kv_http_api, http_port),
     Dispatch = cowboy_router:compile([
@@ -37,10 +43,10 @@ start(_StartType, _StartArgs) ->
 								 [{port, Port}], 
 								 #{env => 
 									#{dispatch => Dispatch}, 
-								 protocols => [http|http2]}),
+								 protocols => [http]}),
     samurai_kv_http_api_sup:start_link().
 
+-spec stop(State) -> ok when
+	State :: term().
 stop(_State) ->
 	ok.
-
-%% internal functions

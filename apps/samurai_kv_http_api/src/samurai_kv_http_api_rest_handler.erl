@@ -12,6 +12,11 @@
 % See the License for the specific language governing permissions and
 % limitations under the License.
 -module(samurai_kv_http_api_rest_handler).
+%%%-------------------------------------------------------------------
+%% @doc 
+%% samurai_kv rest hadler.
+%% @end
+%%%-------------------------------------------------------------------
 
 %% Standard callbacks.
 -export([init/2]).
@@ -26,115 +31,209 @@
 -export([url_to_samurai/2]).
 -export([samurai_to_json/2]).
 
+-type state() :: #{max_len => non_neg_integer()}. 
+-type json()  :: binary().
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% 
+%%% Cowboy REST Callbacks
+%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+-spec init(Req, Opts) -> Result when
+	Req    :: cowboy_req:req(),
+	Opts   :: any,
+	State  :: state(),
+	Result :: {cowboy_rest, Req, State}.
 init(Req, _Opts) ->
 	{ok, Length} = application:get_env(samurai_kv_http_api, max_val_len),
 	{cowboy_rest, Req, #{max_len => Length}}.
 
+-spec allowed_methods(Req, State) -> Result when 
+	Req    :: cowboy_req:req(),
+	State  :: state(),
+	Result :: {[binary()], Req, State}.
 allowed_methods(Req, State) ->
 	{[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>, <<"OPTIONS">>], Req, State}.
 
+-spec content_types_accepted(Req, State) -> Return when 
+	Req    	   :: cowboy_req:req(),
+	State  	   :: state(),
+	Result     :: [{binary() | ParsedMime, ProvideCallback :: atom()}],
+	ParsedMime :: {Type :: binary(), SubType :: binary(), '*' | Params},
+	Params     :: [{Key :: binary(), Value :: binary()}],
+	Return     :: {Result, Req, State}.
 content_types_accepted(Req, State) ->
 	{[
 		{{<<"application">>, <<"x-www-form-urlencoded">>, '*'}, url_to_samurai}
 	 ], Req, State}.
-
+	
+-spec content_types_provided(Req, State) -> Return  when 
+	Req    	   :: cowboy_req:req(),
+	State  	   :: state(),
+	Result     :: [{binary() | ParsedMime, ProvideCallback :: atom()}],
+	ParsedMime :: {Type :: binary(), SubType :: binary(), '*' | Params},
+	Params     :: [{Key :: binary(), Value :: binary()}],
+	Return     :: {Result, Req, State}.
 content_types_provided(Req, State) ->
 	{[
 		{{<<"application">>, <<"json">>, '*'}, samurai_to_json}
 	], Req, State}.
+
+-spec valid_entity_length(Req, State) -> Return when
+	Req    :: cowboy_req:req(),
+	State  :: state(),
+	Return :: {boolean(), Req, State}.
 valid_entity_length(Req, #{max_len := Length} = State) ->
 	Result = cowboy_req:body_length(Req) < Length,
 	{Result, Req, State}.
 
-
-resource_exists(#{method   := <<"GET">>, 
-				  bindings := #{key := Key}} = Req, State) ->
+-spec resource_exists(Req, State) -> Result when
+	Req    :: cowboy_req:req(),
+	State  :: state(),
+	Result :: {boolean(), Req, State}.
+resource_exists(#{method := Method, bindings := #{key := Key}} = Req, State) when Method == <<"GET">>;
+																				  Method == <<"DELETE">> ->
 	case samurai_kv:get(Key) of
-		{ok, Item} ->
-			{true, Req, State#{item => Item}};
+		{ok, Record} ->
+			{true, Req, State#{record => Record}};
 		{error, overload} = Rsp ->
 			respond_service_unavailable(Rsp, Req, State);
-		_Rsp ->
+		{error, no_key} ->
 			{false, Req, State}
 	end;
-resource_exists(#{method := <<"DELETE">>} = Req, State)  ->
+resource_exists(#{method := Method} = Req, State) ->
 	case cowboy_req:binding(key, Req) of
-		undefined ->
+		undefined when Method =:= <<"DELETE">> ->
 			{false, Req, State};
-		Key ->
-			{true, Req, State#{key_to_delete => Key}}
-	end;
-resource_exists(Req, State) ->
-	{true, Req, State}.
+		_ ->
+			{true, Req, State}
+	end.
 
-delete_resource(Req, #{key_to_delete := Key} = State) ->
+-spec delete_resource(Req, State) -> Result when
+	Req    :: cowboy_req:req(),
+	State  :: state(),
+	Result :: {boolean(), Req, State}.
+delete_resource(#{bindings := #{key := Key}} = Req, State) ->
 	samurai_kv:delete(Key),
 	{true, Req, State}.
-	
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% 
+%%% Custom Callbacks
+%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+-spec url_to_samurai(Req, State) -> Result when
+	Req    :: cowboy_req:req(),
+	State  :: state(),
+	Result :: {boolean(), Req, State} | {stop, Reply, State},
+	Reply  :: cowboy_req:req().
 url_to_samurai(#{method := <<"POST">>} = Req, State) ->
 	case cowboy_req:read_urlencoded_body(Req) of
 		{ok, [{<<"key">>, Key},{<<"value">>, Value}], Req2} ->
 			case samurai_kv:add(Key, Value) of 
-				added ->
+				{ok, added} ->
 					{{created, <<$/, Key/binary>>}, Req2, State};
-				already_exists ->
+				{error, already_exists} ->
 					respond_not_modified(Req, State);
 				Rsp when Rsp =:= {error, overload};
 						 Rsp =:= {error, oversize} ->
-					respond_service_unavailable(Rsp, Req, State);
-				_Rsp ->
-					{false, Req2, State}
+					respond_service_unavailable(Rsp, Req, State)
 				end;
 		_ ->
 			{false, Req, State}
 	end;
-url_to_samurai(#{method := <<"PUT">>} = Req, State) ->
+url_to_samurai(#{method := <<"PUT">>, bindings := #{key := Key}} = Req, State) ->
 	case cowboy_req:read_urlencoded_body(Req) of
-		{ok, [{<<"key">>, Key},{<<"value">>, Value}], Req2} ->
+		{ok, [{<<"value">>, Value}], Req2} ->
 			case samurai_kv:update(Key, Value) of 
-				updated ->
+				{ok, updated} ->
 					{true, Req2, State};
+				{error, 'key not found'} = Rsp ->
+					respond_not_found(Rsp, Req, State);
 				{error, overload} = Rsp ->
-					respond_service_unavailable(Rsp, Req, State);
-				_Rsp ->
-					{false, Req2, State}
+					respond_service_unavailable(Rsp, Req, State)
 				end;
 		_ ->
 			{false, Req, State}
 	end;
 url_to_samurai(Req, State)->
 	{false, Req, State}.
-samurai_to_json(Req, #{item := Item} = State) ->
-	{to_json(Item), Req, State};
+
+-spec samurai_to_json(Req, State) -> Result when
+	Req    :: cowboy_req:req(),
+	State  :: state(),
+	Result :: {json(), Req, State}.
+samurai_to_json(Req, #{record := Record} = State) ->
+	{to_json(Record), Req, State};
 samurai_to_json(Req, State) ->
 	Reply = samurai_kv:get_all(),
 	{to_json(Reply), Req, State}.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 %%% 
 %%% INTERNAL FUNCTIONS
 %%% 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
-%%% In fact dirty hacks, but it would look much uglier
+%% In fact custom reponses below are dirty hacks, 
+%% but without them everything would look much uglier
+
+-spec respond_service_unavailable(Error, Req, State) -> Result when
+	Error  :: {error, term()},
+	Req    :: cowboy_req:req(),
+	State  :: state(),
+	Result :: {stop, Reply, State},
+	Reply  :: cowboy_req:req().
 respond_service_unavailable(Error, Req, State) ->
-	respond_non_standard_error(503, Error, Req, State).
+	respond_custom_error(503, Error, Req, State).
 
+-spec respond_not_found(Error, Req, State) -> Result when
+	Error  :: {error, term()},
+	Req    :: cowboy_req:req(),
+	State  :: state(),
+	Result :: {stop, Reply, State},
+	Reply  :: cowboy_req:req().
+respond_not_found(Error, Req, State) ->
+	respond_custom_error(404, Error, Req, State).
+
+-spec respond_not_modified(Req, State) -> Result when
+	Req    :: cowboy_req:req(),
+	State  :: state(),
+	Result :: {stop, Reply, State},
+	Reply  :: cowboy_req:req().
 respond_not_modified(Req, State) ->
-	respond_non_standard_error(304, <<>>, Req, State).
-
-respond_non_standard_error(Status, Error, Req, State) ->
-	Req2 = cowboy_req:set_resp_body(to_json(Error), Req),
-	Resp = cowboy_req:reply(Status, Req2),
+	respond_custom_error(304, <<>>, Req, State).
+%%%-------------------------------------------------------------------
+-spec respond_custom_error(Status, Error, Req, State) -> Result when
+	Status :: cowboy:http_status(),
+	Error  :: term(),
+	Req    :: cowboy_req:req(),
+	State  :: state(),
+	Result :: {stop, Reply, State},
+	Reply  :: cowboy_req:req().
+%% @doc 
+%% Creates non-standard erroneous response for an accept callback.
+%% 
+%% @end
+%%%-------------------------------------------------------------------
+respond_custom_error(Status, Error, Req, State) ->
+	Resp = cowboy_req:reply(Status, #{}, to_json(Error), Req),
 	{stop, Resp, State}.
 
+%%%-------------------------------------------------------------------
 -spec to_json(Term) -> Result when
 	Term   :: binary() | tuple() | list(),
-	Result :: binary().
-to_json(Term) when is_binary(Term) ->
-	Term;
+	Result :: json().
+
+%% @doc 
+%% Ensures safe conversion of term into JSON.
+%% 
+%% @end
+%%%-------------------------------------------------------------------
 to_json(Term) when is_tuple(Term) -> 
-	jiffy:encode({[Term]});
+	to_json([Term]);
 to_json(Term) when is_list(Term) ->
 	case lists:all(fun is_tuple/1, Term) of
 		true ->
