@@ -17,7 +17,7 @@
 %%--------------------------------------------------------------------
 all() -> 
     [
-    test_insert,
+    test_add,
     test_update,
     test_get,
     test_delete
@@ -40,7 +40,13 @@ all() ->
 init_per_suite(Config) ->
     application:ensure_all_started(samurai_kv),
     application:ensure_all_started(gun),
-    Config.
+    {ok, Port} = application:get_env(samurai_kv_http_api, http_port),
+    ConfigAdd = [
+                 {port, Port}, 
+                 {path, "/api/keys/"}, 
+                 {host, "localhost"}
+                ],
+    ConfigAdd ++ Config.
 
 %%--------------------------------------------------------------------
 %% Function: end_per_suite(Config0) -> term() | {save_config,Config1}
@@ -73,13 +79,10 @@ end_per_suite(_Config) ->
 %% Note: This function is free to add any key/value pairs to the Config
 %% variable, but should NOT alter/remove any existing entries.
 %%--------------------------------------------------------------------
-init_per_testcase(test_insert, Config) ->
+init_per_testcase(test_add, Config) ->
     Config;
 init_per_testcase(_TestCase, Config) ->
-    Client = "Rusuigumi", % define client name for ETS KV
-    samurai_kv:connect(Client), % perform straight connection
-    samurai_kv:insert(Client, <<"shogun">>, <<"tokugawa">>),
-    samurai_kv:disconnect(Client), % perform straight connection
+    samurai_kv:add(<<"shogun">>, <<"tokugawa">>),
     Config.
 
 %%--------------------------------------------------------------------
@@ -96,10 +99,7 @@ init_per_testcase(_TestCase, Config) ->
 %% Description: Cleanup after each test case.
 %%--------------------------------------------------------------------
 end_per_testcase(_TestCase, _Config) ->
-    Client = "Rusuigumi", % define client name for ETS KV
-    samurai_kv:connect(Client), % perform straight connection
-    samurai_kv:delete(Client, <<"shogun">>),
-    samurai_kv:disconnect(Client), % perform straight connection
+    samurai_kv:delete(<<"shogun">>),
     ok.
 
 
@@ -122,19 +122,18 @@ end_per_testcase(_TestCase, _Config) ->
  %% Description: Positive test case for insertion of the KV-pair to 
  %% cache storage engine.
  %%--------------------------------------------------------------------
-test_insert(_Config) -> 
-    Client = "Shinobi", % define client name for ETS KV
-    {ok, Port} = application:get_env(samurai_kv_http_api, http_port), % get the pre-defined server tcp port
-    {ok, <<"Client connected">>} = samurai_kv:connect(Client), % perform straight connection to cache core engine
-    {ok, CPid} = gun:open("localhost", Port), % initialize gun connection
-    SRef = gun:post(CPid, "/cache",[{<<"content-type">>, "application/x-www-form-urlencoded"}],"key=shogun&value=tokugawa"), % post request
+test_add(Config) -> 
+    #{port := Port,
+      path := Path,
+      host := Host} = maps:from_list(Config), % get the pre-defined server tcp port
+    {ok, CPid} = gun:open(Host, Port), % initialize gun connection
+    SRef = gun:post(CPid, Path,[{<<"content-type">>, "application/x-www-form-urlencoded"}],"key=shogun&value=tokugawa"), % post request
     {response, _, Status,_} =  gun:await(CPid, SRef), % receive the responce for POST request
-    {ok, {_, Value}} = samurai_kv:get(Client, <<"shogun">>), % get posted value from cache  
+    {ok, [{_, Value}]} = samurai_kv:get(<<"shogun">>), % get posted value from cache
     gun:cancel(CPid,SRef), % canceling http stream
     gun:close(CPid), % close gun connection
-    {ok, <<"Client disconnected">>} = samurai_kv:disconnect(Client), % disconnect from kv storage
-    ?assertEqual(204, Status), % check that status code has expected values
-    ?assertEqual(<<"tokugawa">>,Value).  % check that value stored in cache is same as posted
+    ?assertEqual(201, Status), % check that status code has expected values
+    ?assertEqual(<<"tokugawa">>, Value).
 
 %%--------------------------------------------------------------------
  %% Function: test_update(Config0) ->
@@ -151,19 +150,19 @@ test_insert(_Config) ->
  %% Description: Positive test case for update of the value for KV-pair in
  %% cache storage engine.
  %%--------------------------------------------------------------------
- test_update(_Config) -> 
-    Client = "Daimyo", % define client name for ETS KV
-    {ok, Port} = application:get_env(samurai_kv_http_api, http_port), % get the pre-defined server tcp port
-    {ok, <<"Client connected">>} = samurai_kv:connect(Client), % perform straight connection to cache core engine
-    {ok, CPid} = gun:open("localhost", Port), % initialize gun connection
-    SRef = gun:post(CPid, "/cache",[{<<"content-type">>, "application/x-www-form-urlencoded"}],"key=shogun&value=kamakura"), % post request
+ test_update(Config) -> 
+    #{port := Port,
+      path := Path,
+      host := Host} = maps:from_list(Config), % get the pre-defined server tcp port
+    Key = "shogun",
+    {ok, CPid} = gun:open(Host, Port), % initialize gun connection
+    SRef = gun:put(CPid, Path ++ Key ,[{<<"content-type">>, "application/x-www-form-urlencoded"}],"value=kamakura"), % post request
     {response, _, Status,_} =  gun:await(CPid, SRef), % receive the responce for POST request
-    {ok, {_, Value}} = samurai_kv:get(Client, <<"shogun">>), % get posted value from cache  
+    {ok, [{_, Value}]} = samurai_kv:get(list_to_binary(Key)), % get posted value from cache  
     gun:cancel(CPid,SRef), % canceling http stream
     gun:close(CPid), % close gun connection
-    {ok, <<"Client disconnected">>} = samurai_kv:disconnect(Client), % disconnect from kv storage
     ?assertEqual(204, Status), % check that status code has expected values
-    ?assertEqual(<<"kamakura">>,Value).  % check that value stored in cache is same as posted
+    ?assertEqual(<<"kamakura">>, Value).  % check that value stored in cache is same as posted
 
 %%--------------------------------------------------------------------
  %% Function: test_get(Config0) ->
@@ -180,11 +179,13 @@ test_insert(_Config) ->
  %% Descritption: Positive test case for extracton of KV-pair from
  %% cache storage engine.
  %%--------------------------------------------------------------------
- test_get(_Config) -> 
-    {ok, Port} = application:get_env(samurai_kv_http_api, http_port), % get the pre-defined server tcp port
-    {ok, CPid} = gun:open("localhost", Port), % initialize gun connection
-     % get request (with body)
-    SRef = gun:request(CPid, <<"GET">>, "/cache", [{<<"content-type">>, "application/x-www-form-urlencoded"}], <<"key=shogun">>),
+ test_get(Config) -> 
+    #{port := Port,
+      path := Path,
+      host := Host} = maps:from_list(Config), % get the pre-defined server tcp port
+    Key = "shogun",
+    {ok, CPid} = gun:open(Host, Port), % initialize gun connection
+    SRef = gun:get(CPid, Path ++ Key, [{<<"content-type">>, "application/x-www-form-urlencoded"}]),
     {Status, Headers, Body} =case gun:await(CPid, SRef) of
         {response, fin, SW, Hdrs} ->
             {SW, Hdrs, ""};
@@ -213,17 +214,15 @@ test_insert(_Config) ->
  %% Descritption: Positive test case for removal of KV-pair from
  %% cache storage engine.
  %%--------------------------------------------------------------------
- test_delete(_Config) -> 
-    Client = "Umamawari", % define client name for ETS KV
-    {ok, Port} = application:get_env(samurai_kv_http_api, http_port), % get the pre-defined server tcp port
-    {ok, <<"Client connected">>} = samurai_kv:connect(Client), % perform straight connection to cache core engine
-    {ok, CPid} = gun:open("localhost", Port), % initialize gun connection
-    % get request
-    SRef = gun:request(CPid, <<"DELETE">>, "/cache", [{<<"content-type">>, "application/x-www-form-urlencoded"}], <<"key=shogun">>),
+ test_delete(Config) -> 
+    #{port := Port,
+      path := Path,
+      host := Host} = maps:from_list(Config), % get the pre-defined server tcp port
+    Key = "shogun",
+    {ok, CPid} = gun:open(Host, Port), % initialize gun connection
+    %% get request
+    SRef = gun:delete(CPid, Path ++ Key, [{<<"content-type">>, "application/x-www-form-urlencoded"}]),
     {response, _, Status,_} =  gun:await(CPid, SRef), % receive the responce for DELETE request
-    {error, Reason} = samurai_kv:get(Client, <<"tom">>), % get posted value from cache  
     gun:cancel(CPid,SRef), % canceling http stream
     gun:close(CPid), % close gun connection
-    {ok, <<"Client disconnected">>} = samurai_kv:disconnect(Client), % disconnect from kv storage
-    ?assertEqual(204, Status), % check that status code has expected values
-    ?assertEqual(<<"Key doesn't exist">>, Reason).  % check that value stored in cache is same as posted
+    ?assertEqual(204, Status). % check that status code has expected values
