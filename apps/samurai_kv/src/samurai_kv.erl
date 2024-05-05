@@ -29,8 +29,7 @@
 -spec add(Key, Value) -> Result when
     Key    :: binary(),
     Value  :: binary(),
-    Result :: {ok, added}  | {error, Error},
-    Error  :: already_exists | overload | oversize.
+    Result :: map().
 %% @doc
 %% Adds new record to storage.
 %% Returns error when:
@@ -47,8 +46,7 @@ add(Key, Value) ->
 -spec update(Key, Value) -> Result when
 	Key    :: binary(),
 	Value  :: binary(),
-	Result :: {ok, updated} | {error, Error},
-	Error  :: overload | 'key not found'.
+	Result :: map().
 %% @doc
 %% Updates existing record in storage.
 %% Returns error when:
@@ -63,7 +61,7 @@ update(Key, Value) ->
 %%%-------------------------------------------------------------------
 -spec delete(Key) -> Result when
 	Key    :: binary(),
-	Result :: {ok, deleted} | {error, overload}.
+	Result :: map().
 %% @doc
 %% Removes record correpoding to input key from storage.
 %% Does not return error, if key has not been found.
@@ -78,8 +76,7 @@ delete(Key) ->
 %%%-------------------------------------------------------------------
 -spec get(Key) -> Result when
 	Key    :: binary(),
-	Result :: {ok, db_record()} | {error, Error},
-	Error  :: no_key | overload.
+	Result :: map().
 %% @doc
 %% Retrieves record correpoding to input key from storage.
 %% Returns error when:
@@ -93,9 +90,7 @@ get(Key) ->
 
 %%%-------------------------------------------------------------------
 -spec get_all() -> Result when
-	Result :: [db_record()] 
-			| {result, storage_empty} 
-			| {error, overload}.
+	Result :: map() | [map()].
 %% @doc
 %% Retrieves all exisitng recors from the storage.
 %% Returns error when:

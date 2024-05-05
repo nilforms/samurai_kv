@@ -77,7 +77,9 @@ content_types_accepted(Req, State) ->
 	Return     :: {Result, Req, State}.
 content_types_provided(Req, State) ->
 	{[
-		{{<<"application">>, <<"json">>, '*'}, samurai_to_json}
+		{{<<"application">>, <<"json">>, '*'}, samurai_to_json},
+		{{<<"application">>, <<"problem+json">>, '*'}, url_to_samurai},
+		{{<<"application">>, <<"problem+json">>, '*'}, resource_exists}
 	], Req, State}.
 
 -spec valid_entity_length(Req, State) -> Return when
@@ -94,18 +96,20 @@ valid_entity_length(Req, #{max_len := Length} = State) ->
 	Result :: {boolean(), Req, State}.
 resource_exists(#{method := Method, bindings := #{key := Key}} = Req, State) when Method == <<"GET">>;
 																				  Method == <<"DELETE">> ->
-	case samurai_kv:get(Key) of
-		{ok, Record} ->
-			{true, Req, State#{record => Record}};
-		{error, overload} = Rsp ->
+	Rsp = samurai_kv:get(Key),
+	case Rsp of
+		#{value := _Val} ->
+			{true, Req, State#{record => Rsp}};
+		#{error := <<"too many connections">>} ->
 			respond_service_unavailable(Rsp, Req, State);
-		{error, no_key} ->
-			{false, Req, State}
+		#{error := _Error} ->
+			{false, Req#{resp_body => to_json(Rsp)}, State}
 	end;
 resource_exists(#{method := Method} = Req, State) ->
 	case cowboy_req:binding(key, Req) of
 		undefined when Method =:= <<"DELETE">> ->
-			{false, Req, State};
+			RespBody = to_json(#{error => "key not porvided"}),
+			{false, Req#{resp_body => RespBody}, State};
 		_ ->
 			{true, Req, State}
 	end.
@@ -132,34 +136,37 @@ delete_resource(#{bindings := #{key := Key}} = Req, State) ->
 url_to_samurai(#{method := <<"POST">>} = Req, State) ->
 	case cowboy_req:read_urlencoded_body(Req) of
 		{ok, [{<<"key">>, Key},{<<"value">>, Value}], Req2} ->
-			case samurai_kv:add(Key, Value) of 
-				{ok, added} ->
-					{{created, <<$/, Key/binary>>}, Req2, State};
-				{error, already_exists} ->
+			Rsp = samurai_kv:add(Key, Value),
+			case Rsp of 
+				#{message := <<"key added">>} ->
+					{{created, <<>>}, Req2#{resp_body => to_json(Rsp)}, State};
+				#{error := <<"key already exists">>} ->
 					respond_not_modified(Req, State);
-				Rsp when Rsp =:= {error, overload};
-						 Rsp =:= {error, oversize} ->
+				#{error := _Error} ->
 					respond_service_unavailable(Rsp, Req, State)
 				end;
 		_ ->
-			{false, Req, State}
+			RespBody = to_json(#{error => "wrong body format"}),
+			{false, Req#{resp_body => RespBody}, State}
 	end;
 url_to_samurai(#{method := <<"PUT">>, bindings := #{key := Key}} = Req, State) ->
 	case cowboy_req:read_urlencoded_body(Req) of
 		{ok, [{<<"value">>, Value}], Req2} ->
-			case samurai_kv:update(Key, Value) of 
-				{ok, updated} ->
-					{true, Req2, State};
-				{error, 'key not found'} = Rsp ->
+			Rsp = samurai_kv:update(Key, Value),
+			case Rsp of 
+				#{message := <<"key updated">>} ->
+					{true, Req2#{resp_body => to_json(Rsp)}, State};
+				#{error := <<"key not found">>} ->
 					respond_not_found(Rsp, Req, State);
-				{error, overload} = Rsp ->
+				#{error := _Error} ->
 					respond_service_unavailable(Rsp, Req, State)
 				end;
 		_ ->
-			{false, Req, State}
+			RespBody = to_json(#{error => "wrong body format"}),
+			{false, Req#{resp_body => RespBody}, State}
 	end;
 url_to_samurai(Req, State)->
-	{false, Req, State}.
+	respond_im_teapot(#{error => "you're a teapot ^_^"}, Req, State).
 
 -spec samurai_to_json(Req, State) -> Result when
 	Req    :: cowboy_req:req(),
@@ -168,7 +175,13 @@ url_to_samurai(Req, State)->
 samurai_to_json(Req, #{record := Record} = State) ->
 	{to_json(Record), Req, State};
 samurai_to_json(Req, State) ->
-	Reply = samurai_kv:get_all(),
+	Rsp = samurai_kv:get_all(),
+	Reply = case Rsp of
+		#{message := _Message}->
+			Rsp;
+		Records ->
+			Records
+		end,
 	{to_json(Reply), Req, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
@@ -181,7 +194,7 @@ samurai_to_json(Req, State) ->
 %% but without them everything would look much uglier
 
 -spec respond_service_unavailable(Error, Req, State) -> Result when
-	Error  :: {error, term()},
+	Error  :: map(),
 	Req    :: cowboy_req:req(),
 	State  :: state(),
 	Result :: {stop, Reply, State},
@@ -189,8 +202,16 @@ samurai_to_json(Req, State) ->
 respond_service_unavailable(Error, Req, State) ->
 	respond_custom_error(503, Error, Req, State).
 
+-spec respond_im_teapot(Error, Req, State) -> Result when
+	Error  :: map(),
+	Req    :: cowboy_req:req(),
+	State  :: state(),
+	Result :: {stop, Reply, State},
+	Reply  :: cowboy_req:req().
+respond_im_teapot(Error, Req, State) ->
+	respond_custom_error(418, Error, Req, State).
 -spec respond_not_found(Error, Req, State) -> Result when
-	Error  :: {error, term()},
+	Error  :: map(),
 	Req    :: cowboy_req:req(),
 	State  :: state(),
 	Result :: {stop, Reply, State},
@@ -219,12 +240,12 @@ respond_not_modified(Req, State) ->
 %% @end
 %%%-------------------------------------------------------------------
 respond_custom_error(Status, Error, Req, State) ->
-	Resp = cowboy_req:reply(Status, #{}, to_json(Error), Req),
+	Resp = cowboy_req:reply(Status, #{<<"content-type">> => <<"application/problem+json">>}, to_json(Error), Req),
 	{stop, Resp, State}.
 
 %%%-------------------------------------------------------------------
 -spec to_json(Term) -> Result when
-	Term   :: binary() | tuple() | list(),
+	Term   :: term(),
 	Result :: json().
 
 %% @doc 
@@ -233,13 +254,16 @@ respond_custom_error(Status, Error, Req, State) ->
 %% @end
 %%%-------------------------------------------------------------------
 to_json(Term) when is_tuple(Term) -> 
-	to_json([Term]);
+	jiffy:encode({[Term]});
+to_json(Term) when is_map(Term) ->
+	jiffy:encode(Term);
 to_json(Term) when is_list(Term) ->
-	case lists:all(fun is_tuple/1, Term) of
-		true ->
-			jiffy:encode({Term});
-		false ->
-			<<>>
-	end;
+	TermToEncode = case lists:all(fun is_tuple/1, Term) of
+						true ->
+							{Term};
+						false ->
+							Term
+				end,
+	jiffy:encode(TermToEncode);
 to_json(_Term) ->
 	<<>>.

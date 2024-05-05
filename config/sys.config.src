@@ -10,5 +10,23 @@
                   {max_keys, ${MAX_KEYS}},
                   {num_connections, ${NUM_CONNECTIONS}}
                 ]
+  },
+  {
+    kernel,[
+              {
+                logger,[
+                        {
+                          handler, 
+                          default, 
+                          logger_std_h, 
+                          #{formatter => {
+                                          logger_formatter, 
+                                          #{template => [time," ",pid," ",msg,"\n"]}
+                                         }
+                           }
+                        }
+                      ]
+              }
+            ]
   }
 ].

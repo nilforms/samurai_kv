@@ -38,7 +38,7 @@ start_worker() ->
 	supervisor:start_child(?MODULE, [Env]).
 
 -spec stop_worker(Child) -> Return when
-	Child  :: supervisor:child(),
+	Child  :: pid(),
 	Return :: ok | {error, Error},
 	Error  :: not_found | simple_one_for_one.
 stop_worker(Child) ->
@@ -51,13 +51,13 @@ stop_worker(Child) ->
 	Return     :: ignore | {ok, {SupFlags, ChildSpecs}}.
 init([]) ->
 	SupFlags = #{strategy => simple_one_for_one,
-				 intensity => 10,
-				 period => 10},
+				 intensity => 100,
+				 period => 5},
 	ChildSpecs = [
 				  #{id => samurai_kv_storage_worker,      
 				    start => {samurai_kv_storage_worker, start_link, []},
 					restart => temporary, 
-					shutdown => 5000, 
+					shutdown => brutal_kill, 
 					type => worker,       
 					modules => []}
 				 ],

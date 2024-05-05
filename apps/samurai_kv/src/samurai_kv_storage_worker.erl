@@ -67,29 +67,29 @@ handle_call({add, _Key, _Value} = Request, From, #{max_keys := MaxKeys} = State)
         true ->
             {noreply, State, {continue, {From, Request}}};
         false ->
-            {stop, normal, {error, oversize}, State}
+            {stop, normal, #{error => <<"storage size limit exceeded">>}, State}
     end;
 handle_call({update, Key, Value}, _From, State) ->
     Reply = case ets:update_element(?storage_table, Key, [{2, Value}]) of
-                true  -> {ok, updated};
-                false -> {error, 'key not found'}
+                true  -> #{key => Key, message => <<"key updated">>};
+                false -> #{key => Key, error => <<"key not found">>}
             end,
     {stop, normal, Reply, State};
 handle_call({delete, Key}, _From, State) ->
     ets:delete(?storage_table, Key),
-    {stop, normal, {ok, deleted}, State};
+    {stop, normal, #{key => Key, message => <<"key deleted">>}, State};
 handle_call({get, Key}, _From, State) ->
     Reply = case ets:lookup(?storage_table, Key) of
                 [] ->
-                    {error, no_key};
-                Item ->
-                    {ok, Item}
+                    #{key => Key, error => <<"key not found">>};
+                [{Key, Value}] ->
+                    #{key => Key, value => Value}
             end,
     {stop, normal, Reply, State};
 handle_call(get_all, _From, State) ->
     Reply = case ets:tab2list(?storage_table) of
-        [] -> {result, storage_empty};
-        List -> List
+        [] -> #{message => <<"storage empty">>};
+        List -> [#{key => K, value => V} || {K, V} <- List]
     end,
     {stop, normal, Reply, State};
 handle_call(Request, From, State) ->
@@ -119,9 +119,9 @@ handle_info(Info, State) ->
 handle_continue({From, {add, Key, Value}}, State) ->
     Reply = case ets:insert_new(?storage_table, {Key, Value}) of
                 true -> 
-                    {ok, added};                     
+                    #{key => Key, message => <<"key added">>};                     
                 false ->
-                    {error, already_exists}
+                    #{key => Key, error => <<"key already exists">>}
             end,
     gen_server:reply(From, Reply),
     {stop, normal, State};

@@ -45,7 +45,7 @@ init([]) ->
 	ChildSpecs = [
 					#{id => samurai_kv_storage_sup,       
 					 start => {samurai_kv_storage_sup, start_link, []},      
-					 restart => temporary,
+					 restart => permanent,
 					 shutdown => infinity,
 					 type => supervisor,
 					 modules => []},

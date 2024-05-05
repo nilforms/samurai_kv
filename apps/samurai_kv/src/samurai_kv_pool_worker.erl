@@ -56,36 +56,31 @@
 -spec add(Key, Value) -> Result when
     Key    :: binary(),
     Value  :: binary(),
-    Result :: {ok, added}  | {error, Error},
-    Error  :: already_exists | overload | oversize.
+    Result :: map().
 add(Key, Value) ->
 	procedure(?FUNCTION_NAME, [Key, Value]).   
 
 -spec update(Key, Value) -> Result when
 	Key    :: binary(),
 	Value  :: binary(),
-	Result :: {ok, updated} | {error, Error},
-	Error  :: overload | 'key not found'.
+	Result :: map().
 update(Key, Value) ->
 	procedure(?FUNCTION_NAME, [Key, Value]).   
 
 -spec delete(Key) -> Result when
 	Key    :: binary(),
-	Result :: {ok, deleted} | {error, overload}.
+	Result :: map().
 delete(Key) ->
 	procedure(?FUNCTION_NAME, [Key]).
 
 -spec get(Key) -> Result when
 	Key    :: binary(),
-	Result :: {ok, db_record()} | {error, Error},
-	Error  :: no_key | overload.
+	Result :: map().
 get(Key) ->
 	procedure(?FUNCTION_NAME, [Key]).
 
 -spec get_all() -> Result when
-	Result :: [db_record()] 
-			| {result, storage_empty} 
-			| {error, overload}.
+	Result :: map() | [map()].
 get_all() ->
 	procedure(?FUNCTION_NAME, []).
 
@@ -114,9 +109,18 @@ init(Args) ->
 	State   :: state(),
 	Return  :: {reply, term(), state()}.
 handle_call(get_worker, _From, #{limit := 0} = State) ->
-	{reply, {error, overload}, State};
+	{reply, {error, <<"too many connections">>}, State};
 handle_call(get_worker, _From, #{limit := Limit} = State) ->
-	Reply = samurai_kv_storage_sup:start_worker(),
+	Reply = case samurai_kv_storage_sup:start_worker() of
+				{ok, W} -> 
+					erlang:monitor(process, W),
+					W;
+				{ok, W, _Info} -> 
+					erlang:monitor(process, W),
+					W;
+				Error -> 
+					Error
+			end,
 	{reply, Reply, State#{limit => Limit - 1}};
 handle_call(Request, From, State) ->
 	logger:info("Request ~p  from ~p received", [Request, From]),
@@ -134,8 +138,6 @@ handle_cast(Msg, State) ->
 	Info   :: term(),
 	State  :: state(),
 	Return :: {noreply, state()}.
-handle_info({'DOWN', _Mref, process, _W, normal}, #{limit := Limit} = State) ->
-	{noreply, State#{limit => Limit + 1}};
 handle_info({'DOWN', Mref, process, W, _Reason}, #{limit := Limit} = State) ->
 	erlang:demonitor(Mref),
 	samurai_kv_storage_sup:stop_worker(W),
@@ -161,7 +163,7 @@ terminate(Reason, _State) ->
 -spec procedure(Method, Args) -> Result when
 	Method :: any(),
 	Args   :: [binary()],
-	Result :: {ok, term()} | {error, term()}.
+	Result :: map().
 %% @doc
 %% Performs DB procedure corresponding to certain method
 %% 
@@ -172,11 +174,14 @@ procedure(Method, Args) ->
 		[] -> 
 			Method;
 		ArgList ->
-			list_to_tuple([Method] ++ ArgList)
+			list_to_tuple([Method | ArgList])
 		end,
 	case gen_server:call(?SERVER, get_worker) of
-		{ok, W} ->
-			gen_server:call(W, Request);
+		Worker when is_pid(Worker) ->
+			gen_server:call(Worker, Request);
+		{error, Error} ->
+			#{error => Error};
 		Msg ->
-			Msg
+			logger:error("Strange error ~p occurs", [Msg]),
+			#{error => "storage doomed"}
 	end.
