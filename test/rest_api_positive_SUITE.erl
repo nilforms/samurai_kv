@@ -177,7 +177,7 @@ test_add(Config) ->
 %% Config0 = Config1 = [tuple()]
 %%   A list of key/value pairs, holding the test case configuration.
 %%
-%% Descritption: Positive test case for extracton of KV-pair from
+%% Description: Positive test case for extraction of KV-pair from
 %% cache storage.
 %%--------------------------------------------------------------------
  test_get_key(Config) -> 
@@ -193,7 +193,7 @@ test_add(Config) ->
     gun:shutdown(CPid), % close gun connection
 
     ?assertEqual(200, Status), % check that status code has expected values
-    ?assertEqual(jiffy:encode(#{key => list_to_binary(Key), value => <<"tokugawa">>}), Body), % check that responce body has expected form 
+    ?assertEqual(jiffy:encode(#{key => list_to_binary(Key), value => <<"tokugawa">>}), Body), % check that response body has expected form 
     ?assert(lists:member(?content_type_json, Headers)), %  check that returned content type is json
     ok.
 
@@ -202,24 +202,24 @@ test_add(Config) ->
 %% Config0 = Config1 = [tuple()]
 %%   A list of key/value pairs, holding the test case configuration.
 %%
-%% Descritption: Positive test case for extracton of KV-pair from
+%% Description: Positive test case for extraction of all KV-pairs from
 %% cache storage.
 %%--------------------------------------------------------------------
  test_get_all(Config) -> 
     #{port := Port,
       path := Path,
       host := Host} = maps:from_list(Config), % get the pre-defined server tcp port
-    Key = "shogun",
 
     {ok, CPid} = gun:open(Host, Port), % initialize gun connection
-    SRef = gun:get(CPid, Path ++ Key, ?header_content_type_url_encoded),
+    SRef = gun:get(CPid, Path, ?header_content_type_url_encoded),
     {Status, Headers, Body} = test_util:receive_http_response(CPid, SRef),
     gun:cancel(CPid,SRef), % canceling http stream
     gun:shutdown(CPid), % close gun connection
 
     ?assertEqual(200, Status), % check that status code has expected values
-    ?assertEqual(jiffy:encode(#{key => list_to_binary(Key), value => <<"tokugawa">>}), Body), % check that responce body has expected form 
-    ?assert(lists:member(?content_type_json,Headers)), %  check that returned content type is json
+    ?assertEqual(jiffy:encode([#{key => <<"daimyo">>, value => <<"yasui">>},
+                               #{key => <<"shogun">>, value => <<"tokugawa">>}]), Body), % check that response body has expected form 
+    ?assert(lists:member(?content_type_json, Headers)), %  check that returned content type is json
 
     ok.
 %%--------------------------------------------------------------------
@@ -227,7 +227,7 @@ test_add(Config) ->
 %% Config0 = Config1 = [tuple()]
 %%   A list of key/value pairs, holding the test case configuration.
 %%
-%% Descritption: Positive test case for removal of KV-pair from
+%% Description: Positive test case for removal of KV-pair from
 %% cache storage.
 %%--------------------------------------------------------------------
  test_delete(Config) -> 
@@ -239,7 +239,7 @@ test_add(Config) ->
     {ok, CPid} = gun:open(Host, Port), % initialize gun connection
     %% get request
     SRef = gun:delete(CPid, Path ++ Key, ?header_content_type_url_encoded),
-    {Status, _Headers, _Body} = test_util:receive_http_response(CPid, SRef), % receive the responce for DELETE request
+    {Status, _Headers, _Body} = test_util:receive_http_response(CPid, SRef), % receive the response for DELETE request
     gun:cancel(CPid, SRef), % canceling http stream
     gun:shutdown(CPid), % close gun connection
     

@@ -190,7 +190,7 @@ samurai_to_json(Req, State) ->
 %%% 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
-%% In fact custom reponses below are dirty hacks, 
+%% In fact custom responses below are dirty hacks, 
 %% but without them everything would look much uglier
 
 -spec respond_service_unavailable(Error, Req, State) -> Result when

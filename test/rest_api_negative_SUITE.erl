@@ -223,7 +223,7 @@ test_add_value_toolong(Config) ->
 %% Config0 = Config1 = [tuple()]
 %%   A list of key/value pairs, holding the test case configuration.
 %% 
-%% Descritption: Negative test case for extracton of KV-pair from
+%% Description: Negative test case for extraction of KV-pair from
 %% cache storage engine (Key not found).
 %%--------------------------------------------------------------------
 test_update_key_provided_not_exists(Config) -> 
@@ -248,7 +248,7 @@ test_update_key_provided_not_exists(Config) ->
 %% Config0 = Config1 = [tuple()]
 %%   A list of key/value pairs, holding the test case configuration.
 %%
-%% Descritption: Negative test case for extracton of KV-pair from
+%% Description: Negative test case for extraction of KV-pair from
 %% cache storage engine (Key not found).
 %%--------------------------------------------------------------------
 test_update_wrong_path(Config) -> 
@@ -273,7 +273,7 @@ test_update_wrong_path(Config) ->
 %% Config0 = Config1 = [tuple()]
 %%   A list of key/value pairs, holding the test case configuration.
 %%
-%% Descritption: Negative test case for update KV-pair in
+%% Description: Negative test case for update KV-pair in
 %% storage, when key not provided in request.
 %%--------------------------------------------------------------------
 test_update_empty_body(Config) -> 
@@ -297,7 +297,7 @@ test_update_empty_body(Config) ->
 %% Config0 = Config1 = [tuple()]
 %%   A list of key/value pairs, holding the test case configuration.
 %%
-%% Descritption: Negative test case for extracton of KV-pair from
+%% Description: Negative test case for extraction of KV-pair from
 %% cache storage (Key not found).
 %%--------------------------------------------------------------------
 test_get_key_provided_not_exists(Config) -> 
@@ -321,7 +321,7 @@ test_get_key_provided_not_exists(Config) ->
 %% Config0 = Config1 = [tuple()]
 %%   A list of key/value pairs, holding the test case configuration.
 %%
-%% Descritption: Negative test case when key to remove from
+%% Description: Negative test case when key to remove from
 %% cache storage not provided.
 %%--------------------------------------------------------------------
  test_delete_key_not_provided(Config) -> 
@@ -344,7 +344,7 @@ test_get_key_provided_not_exists(Config) ->
 %% Config0 = Config1 = [tuple()]
 %%   A list of key/value pairs, holding the test case configuration.
 %%
-%% Descritption: Negative test case for removal of absent KV-pair from
+%% Description: Negative test case for removal of absent KV-pair from
 %% cache storage.
 %%--------------------------------------------------------------------
  test_delete_key_provided_not_exists(Config) -> 
