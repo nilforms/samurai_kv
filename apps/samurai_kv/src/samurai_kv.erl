@@ -15,24 +15,88 @@
 
 -module(samurai_kv).
 
--export([insert/3,
-         delete/2,
-         connect/1,
-         disconnect/1,
-         get/2,
-         get_all/1
-]).
+-include("samurai_kv.hrl").
 
-connect(Client) ->
-    samurai_kv_pool_worker:connect(Client).
-disconnect(Client) ->
-    samurai_kv_pool_worker:disconnect(Client).
-insert(Client, Key, Value) ->
-    samurai_kv_pool_worker:insert(Client, Key, Value).
+-export([
+         add/2,
+         update/2,
+         delete/1,
+         get/1,
+         get_all/0
+        ]).
 
-delete(Client, Key) ->
-    samurai_kv_pool_worker:delete(Client, Key).
-get(Client, Key) ->
-    samurai_kv_pool_worker:get(Client, Key).
-get_all(Client) ->
-    samurai_kv_pool_worker:get_all(Client).
+%%%-------------------------------------------------------------------
+-spec add(Key, Value) -> Result when
+    Key    :: binary(),
+    Value  :: binary(),
+    Result :: map().
+%% @doc
+%% Adds new record to storage.
+%% Returns error when:
+%%  - key already exists
+%%  - storage workers pool is overlaoded
+%%  - storage exceeds size limits 
+%%
+%% @end
+%%%-------------------------------------------------------------------
+add(Key, Value) ->
+	samurai_kv_pool_worker:add(Key, Value).
+
+%%%-------------------------------------------------------------------
+-spec update(Key, Value) -> Result when
+	Key    :: binary(),
+	Value  :: binary(),
+	Result :: map().
+%% @doc
+%% Updates existing record in storage.
+%% Returns error when:
+%%  - key does not exist
+%%  - storage workers pool is overlaoded 
+%%
+%% @end
+%%%-------------------------------------------------------------------
+update(Key, Value) ->
+	samurai_kv_pool_worker:update(Key, Value).
+
+%%%-------------------------------------------------------------------
+-spec delete(Key) -> Result when
+	Key    :: binary(),
+	Result :: map().
+%% @doc
+%% Removes record correpoding to input key from storage.
+%% Does not return error, if key has not been found.
+%% Returns error when:
+%%  - storage exceeds size limits 
+%%
+%% @end
+%%%-------------------------------------------------------------------
+delete(Key) ->
+	samurai_kv_pool_worker:delete(Key).
+
+%%%-------------------------------------------------------------------
+-spec get(Key) -> Result when
+	Key    :: binary(),
+	Result :: map().
+%% @doc
+%% Retrieves record correpoding to input key from storage.
+%% Returns error when:
+%%  - key does not exist
+%%  - storage workers pool is overlaoded 
+%%
+%% @end
+%%%-------------------------------------------------------------------
+get(Key) ->
+	samurai_kv_pool_worker:get(Key).
+
+%%%-------------------------------------------------------------------
+-spec get_all() -> Result when
+	Result :: map() | [map()].
+%% @doc
+%% Retrieves all exisitng recors from the storage.
+%% Returns error when:
+%%  - storage workers pool is overlaoded
+%%
+%% @end
+%%%-------------------------------------------------------------------
+get_all() ->
+	samurai_kv_pool_worker:get_all().

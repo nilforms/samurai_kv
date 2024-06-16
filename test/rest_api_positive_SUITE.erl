@@ -3,6 +3,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include("test.hrl").
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
@@ -17,9 +18,10 @@
 %%--------------------------------------------------------------------
 all() -> 
     [
-    test_insert,
+    test_add,
     test_update,
-    test_get,
+    test_get_key,
+    test_get_all,
     test_delete
     ].
 
@@ -40,7 +42,14 @@ all() ->
 init_per_suite(Config) ->
     application:ensure_all_started(samurai_kv),
     application:ensure_all_started(gun),
-    Config.
+
+    {ok, Port} = application:get_env(samurai_kv_http_api, http_port),
+    ConfigAdd = [
+                 {port, Port}, 
+                 {path, "/api/keys/"}, 
+                 {host, "localhost"}
+                ],
+    ConfigAdd ++ Config.
 
 %%--------------------------------------------------------------------
 %% Function: end_per_suite(Config0) -> term() | {save_config,Config1}
@@ -54,8 +63,6 @@ end_per_suite(_Config) ->
     application:stop(samurai_kv),
     application:stop(gun),
     ok.
-
-
 
 %%--------------------------------------------------------------------
 %% Function: init_per_testcase(TestCase, Config0) ->
@@ -73,13 +80,14 @@ end_per_suite(_Config) ->
 %% Note: This function is free to add any key/value pairs to the Config
 %% variable, but should NOT alter/remove any existing entries.
 %%--------------------------------------------------------------------
-init_per_testcase(test_insert, Config) ->
+init_per_testcase(test_add, Config) ->
+    Config;
+init_per_testcase(test_get_all, Config) ->
+    samurai_kv:add(<<"shogun">>, <<"tokugawa">>),
+    samurai_kv:add(<<"daimyo">>, <<"yasui">>),
     Config;
 init_per_testcase(_TestCase, Config) ->
-    Client = "Rusuigumi", % define client name for ETS KV
-    samurai_kv:connect(Client), % perform straight connection
-    samurai_kv:insert(Client, <<"shogun">>, <<"tokugawa">>),
-    samurai_kv:disconnect(Client), % perform straight connection
+    samurai_kv:add(<<"shogun">>, <<"tokugawa">>),
     Config.
 
 %%--------------------------------------------------------------------
@@ -95,11 +103,12 @@ init_per_testcase(_TestCase, Config) ->
 %%
 %% Description: Cleanup after each test case.
 %%--------------------------------------------------------------------
+end_per_testcase(test_get_all, _Config) ->
+    samurai_kv:delete(<<"shogun">>),
+    samurai_kv:delete(<<"daimyo">>),
+    ok;
 end_per_testcase(_TestCase, _Config) ->
-    Client = "Rusuigumi", % define client name for ETS KV
-    samurai_kv:connect(Client), % perform straight connection
-    samurai_kv:delete(Client, <<"shogun">>),
-    samurai_kv:disconnect(Client), % perform straight connection
+    samurai_kv:delete(<<"shogun">>),
     ok.
 
 
@@ -108,122 +117,131 @@ end_per_testcase(_TestCase, _Config) ->
 %%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
- %% Function: test_insert(Config0) ->
- %%               ok | exit() | {skip,Reason} | {comment,Comment} |
- %%               {save_config,Config1} | {skip_and_save,Reason,Config1}
- %%
- %% Config0 = Config1 = [tuple()]
- %%   A list of key/value pairs, holding the test case configuration.
- %% Reason = term()
- %%   The reason for skipping the test case.
- %% Comment = term()
- %%   A comment about the test case that will be printed in the html log.
- %%
- %% Description: Positive test case for insertion of the KV-pair to 
- %% cache storage engine.
- %%--------------------------------------------------------------------
-test_insert(_Config) -> 
-    Client = "Shinobi", % define client name for ETS KV
-    {ok, Port} = application:get_env(samurai_kv_http_api, http_port), % get the pre-defined server tcp port
-    {ok, <<"Client connected">>} = samurai_kv:connect(Client), % perform straight connection to cache core engine
-    {ok, CPid} = gun:open("localhost", Port), % initialize gun connection
-    SRef = gun:post(CPid, "/cache",[{<<"content-type">>, "application/x-www-form-urlencoded"}],"key=shogun&value=tokugawa"), % post request
-    {response, _, Status,_} =  gun:await(CPid, SRef), % receive the responce for POST request
-    {ok, {_, Value}} = samurai_kv:get(Client, <<"shogun">>), % get posted value from cache  
+%% Function: test_add(Config0) -> ok. 
+%% Config0 = Config1 = [tuple()]
+%%   A list of key/value pairs, holding the test case configuration.
+%% 
+%% Description: Positive test case for additon of the KV-pair to 
+%% cache storage..
+%%--------------------------------------------------------------------
+test_add(Config) -> 
+    #{port := Port,
+      path := Path,
+      host := Host} = maps:from_list(Config), % get the pre-defined server tcp port
+    Key = "shogun",
+    ReqValue = "tokugawa",
+
+    {ok, CPid} = gun:open(Host, Port), % initialize gun connection
+    SRef = gun:post(CPid, Path, ?header_content_type_url_encoded, ?url_encode([{"key", Key}, {"value", ReqValue}])), % post request
+    {Status, Headers, Body} = test_util:receive_http_response(CPid, SRef),
+    #{value := DbValue} = samurai_kv:get(list_to_binary(Key)), % get posted value from cache
     gun:cancel(CPid,SRef), % canceling http stream
-    gun:close(CPid), % close gun connection
-    {ok, <<"Client disconnected">>} = samurai_kv:disconnect(Client), % disconnect from kv storage
-    ?assertEqual(204, Status), % check that status code has expected values
-    ?assertEqual(<<"tokugawa">>,Value).  % check that value stored in cache is same as posted
+    gun:shutdown(CPid), % close gun connection
+    
+    ?assertEqual(201, Status), % check that status code has expected values
+    ?assertEqual(jiffy:encode(#{key => list_to_binary(Key), message => <<"key added">>}), Body),
+    ?assert(lists:member(?content_type_json, Headers)),
+    ?assertEqual(list_to_binary(ReqValue), DbValue),
+    ok.
 
 %%--------------------------------------------------------------------
- %% Function: test_update(Config0) ->
- %%               ok | exit() | {skip,Reason} | {comment,Comment} |
- %%               {save_config,Config1} | {skip_and_save,Reason,Config1}
- %%
- %% Config0 = Config1 = [tuple()]
- %%   A list of key/value pairs, holding the test case configuration.
- %% Reason = term()
- %%   The reason for skipping the test case.
- %% Comment = term()
- %%   A comment about the test case that will be printed in the html log.
- %%
- %% Description: Positive test case for update of the value for KV-pair in
- %% cache storage engine.
- %%--------------------------------------------------------------------
- test_update(_Config) -> 
-    Client = "Daimyo", % define client name for ETS KV
-    {ok, Port} = application:get_env(samurai_kv_http_api, http_port), % get the pre-defined server tcp port
-    {ok, <<"Client connected">>} = samurai_kv:connect(Client), % perform straight connection to cache core engine
-    {ok, CPid} = gun:open("localhost", Port), % initialize gun connection
-    SRef = gun:post(CPid, "/cache",[{<<"content-type">>, "application/x-www-form-urlencoded"}],"key=shogun&value=kamakura"), % post request
-    {response, _, Status,_} =  gun:await(CPid, SRef), % receive the responce for POST request
-    {ok, {_, Value}} = samurai_kv:get(Client, <<"shogun">>), % get posted value from cache  
-    gun:cancel(CPid,SRef), % canceling http stream
-    gun:close(CPid), % close gun connection
-    {ok, <<"Client disconnected">>} = samurai_kv:disconnect(Client), % disconnect from kv storage
-    ?assertEqual(204, Status), % check that status code has expected values
-    ?assertEqual(<<"kamakura">>,Value).  % check that value stored in cache is same as posted
-
+%% Function: test_update(Config0) -> ok.
+%% Config0 = Config1 = [tuple()]
+%%   A list of key/value pairs, holding the test case configuration.
+%%
+%% Description: Positive test case for update of the value for KV-pair in
+%% cache storage..
 %%--------------------------------------------------------------------
- %% Function: test_get(Config0) ->
- %%               ok | exit() | {skip,Reason} | {comment,Comment} |
- %%               {save_config,Config1} | {skip_and_save,Reason,Config1}
- %%
- %% Config0 = Config1 = [tuple()]
- %%   A list of key/value pairs, holding the test case configuration.
- %% Reason = term()
- %%   The reason for skipping the test case.
- %% Comment = term()
- %%   A comment about the test case that will be printed in the html log.
- %%
- %% Descritption: Positive test case for extracton of KV-pair from
- %% cache storage engine.
- %%--------------------------------------------------------------------
- test_get(_Config) -> 
-    {ok, Port} = application:get_env(samurai_kv_http_api, http_port), % get the pre-defined server tcp port
-    {ok, CPid} = gun:open("localhost", Port), % initialize gun connection
-     % get request (with body)
-    SRef = gun:request(CPid, <<"GET">>, "/cache", [{<<"content-type">>, "application/x-www-form-urlencoded"}], <<"key=shogun">>),
-    {Status, Headers, Body} =case gun:await(CPid, SRef) of
-        {response, fin, SW, Hdrs} ->
-            {SW, Hdrs, ""};
-        {response, nofin, SW, Hdrs} ->
-            {ok, Answ} = gun:await_body(CPid, SRef),
-            {SW, Hdrs, Answ}
-    end,
-    gun:cancel(CPid,SRef), % canceling http stream
-    gun:close(CPid), % close gun connection
+ test_update(Config) -> 
+    #{port := Port,
+      path := Path,
+      host := Host} = maps:from_list(Config), % get the pre-defined server tcp port
+    Key = "shogun",
+    ReqValue = "kamakura",
+
+    {ok, CPid} = gun:open(Host, Port), % initialize gun connection
+    SRef = gun:put(CPid, Path ++ Key ,?header_content_type_url_encoded, ?url_encode([{"value", ReqValue}])), % post request
+    {Status, Headers, Body} = test_util:receive_http_response(CPid, SRef),
+    #{value := DbValue} = samurai_kv:get(list_to_binary(Key)), % get posted value from cache  
+    gun:cancel(CPid, SRef), % canceling http stream
+    gun:shutdown(CPid), % close gun connection
+    
     ?assertEqual(200, Status), % check that status code has expected values
-    ?assertEqual(<<"{\"shogun\":\"tokugawa\"}">>, Body), % check that responce body has expected form 
-    ?assert(lists:member({<<"content-type">>, <<"application/json">>},Headers)). %  check that returned content type is json
+    ?assertEqual(jiffy:encode(#{key => list_to_binary(Key), message => <<"key updated">>}), Body),
+    ?assert(lists:member(?content_type_json, Headers)),
+    ?assertEqual(list_to_binary(ReqValue), DbValue),  % check that value stored in cache is same as posted
+    ok.
 
 %%--------------------------------------------------------------------
- %% Function: test_delete(Config0) ->
- %%               ok | exit() | {skip,Reason} | {comment,Comment} |
- %%               {save_config,Config1} | {skip_and_save,Reason,Config1}
- %%
- %% Config0 = Config1 = [tuple()]
- %%   A list of key/value pairs, holding the test case configuration.
- %% Reason = term()
- %%   The reason for skipping the test case.
- %% Comment = term()
- %%   A comment about the test case that will be printed in the html log.
- %%
- %% Descritption: Positive test case for removal of KV-pair from
- %% cache storage engine.
- %%--------------------------------------------------------------------
- test_delete(_Config) -> 
-    Client = "Umamawari", % define client name for ETS KV
-    {ok, Port} = application:get_env(samurai_kv_http_api, http_port), % get the pre-defined server tcp port
-    {ok, <<"Client connected">>} = samurai_kv:connect(Client), % perform straight connection to cache core engine
-    {ok, CPid} = gun:open("localhost", Port), % initialize gun connection
-    % get request
-    SRef = gun:request(CPid, <<"DELETE">>, "/cache", [{<<"content-type">>, "application/x-www-form-urlencoded"}], <<"key=shogun">>),
-    {response, _, Status,_} =  gun:await(CPid, SRef), % receive the responce for DELETE request
-    {error, Reason} = samurai_kv:get(Client, <<"tom">>), % get posted value from cache  
+%% Function: test_get_key(Config0) -> ok.
+%% Config0 = Config1 = [tuple()]
+%%   A list of key/value pairs, holding the test case configuration.
+%%
+%% Description: Positive test case for extraction of KV-pair from
+%% cache storage.
+%%--------------------------------------------------------------------
+ test_get_key(Config) -> 
+    #{port := Port,
+      path := Path,
+      host := Host} = maps:from_list(Config), % get the pre-defined server tcp port
+    Key = "shogun",
+
+    {ok, CPid} = gun:open(Host, Port), % initialize gun connection
+    SRef = gun:get(CPid, Path ++ Key, ?header_content_type_url_encoded),
+    {Status, Headers, Body} = test_util:receive_http_response(CPid, SRef),
     gun:cancel(CPid,SRef), % canceling http stream
-    gun:close(CPid), % close gun connection
-    {ok, <<"Client disconnected">>} = samurai_kv:disconnect(Client), % disconnect from kv storage
+    gun:shutdown(CPid), % close gun connection
+
+    ?assertEqual(200, Status), % check that status code has expected values
+    ?assertEqual(jiffy:encode(#{key => list_to_binary(Key), value => <<"tokugawa">>}), Body), % check that response body has expected form 
+    ?assert(lists:member(?content_type_json, Headers)), %  check that returned content type is json
+    ok.
+
+%%--------------------------------------------------------------------
+%% Function: test_get_all(Config0) -> ok. 
+%% Config0 = Config1 = [tuple()]
+%%   A list of key/value pairs, holding the test case configuration.
+%%
+%% Description: Positive test case for extraction of all KV-pairs from
+%% cache storage.
+%%--------------------------------------------------------------------
+ test_get_all(Config) -> 
+    #{port := Port,
+      path := Path,
+      host := Host} = maps:from_list(Config), % get the pre-defined server tcp port
+
+    {ok, CPid} = gun:open(Host, Port), % initialize gun connection
+    SRef = gun:get(CPid, Path, ?header_content_type_url_encoded),
+    {Status, Headers, Body} = test_util:receive_http_response(CPid, SRef),
+    gun:cancel(CPid,SRef), % canceling http stream
+    gun:shutdown(CPid), % close gun connection
+
+    ?assertEqual(200, Status), % check that status code has expected values
+    ?assertEqual(jiffy:encode([#{key => <<"daimyo">>, value => <<"yasui">>},
+                               #{key => <<"shogun">>, value => <<"tokugawa">>}]), Body), % check that response body has expected form 
+    ?assert(lists:member(?content_type_json, Headers)), %  check that returned content type is json
+
+    ok.
+%%--------------------------------------------------------------------
+%% Function: test_delete(Config0) -> ok.
+%% Config0 = Config1 = [tuple()]
+%%   A list of key/value pairs, holding the test case configuration.
+%%
+%% Description: Positive test case for removal of KV-pair from
+%% cache storage.
+%%--------------------------------------------------------------------
+ test_delete(Config) -> 
+    #{port := Port,
+      path := Path,
+      host := Host} = maps:from_list(Config), % get the pre-defined server tcp port
+    Key = "shogun",
+    
+    {ok, CPid} = gun:open(Host, Port), % initialize gun connection
+    %% get request
+    SRef = gun:delete(CPid, Path ++ Key, ?header_content_type_url_encoded),
+    {Status, _Headers, _Body} = test_util:receive_http_response(CPid, SRef), % receive the response for DELETE request
+    gun:cancel(CPid, SRef), % canceling http stream
+    gun:shutdown(CPid), % close gun connection
+    
     ?assertEqual(204, Status), % check that status code has expected values
-    ?assertEqual(<<"Key doesn't exist">>, Reason).  % check that value stored in cache is same as posted
+    ok.

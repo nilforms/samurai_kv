@@ -20,19 +20,42 @@
 
 -module(samurai_kv_app).
 
+-include("samurai_kv.hrl").
+
 -behaviour(application).
 
--export([start/2, stop/1]).
+-export([
+         start/2, 
+         stop/1
+         ]).
 
-start(_StartType, _StartArgs) ->
+-spec start(StartType, StartArgs) -> Return when
+	StartType :: application:start_type(), 
+	StartArgs :: term(),
+	Return    ::   {'ok', pid()} 
+                 | {'ok', pid(), term()} 
+                 | {'error', term()}.
+ start(_StartType, _StartArgs) ->
     create_ets_tabs(),
     samurai_kv_sup:start_link().
 
+-spec stop(State) -> ok when
+	State :: term().
 stop(_State) ->
     ok.
 
-%% internal functions
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+%%% 
+%%% INTERNAL FUNCTIONS
+%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
+%%%-------------------------------------------------------------------
+-spec create_ets_tabs() -> ets:table().
+%% @doc 
+%% Creates ETS table needed for storage work.
+%% 
+%% @end
+%%%-------------------------------------------------------------------
 create_ets_tabs() ->
-    ets:new(subscriptions, [set, named_table,public]),
-    ets:new(storage,[set, named_table, public, {write_concurrency, true},{read_concurrency, true}]).
+    ets:new(?storage_table,[set, named_table, public, {write_concurrency, true}, {read_concurrency, true}]).

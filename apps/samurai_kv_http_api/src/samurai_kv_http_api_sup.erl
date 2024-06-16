@@ -27,23 +27,18 @@
 
 -define(SERVER, ?MODULE).
 
+-spec start_link() -> supervisor:startlink_ret().
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+	supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
-%% sup_flags() = #{strategy => strategy(),         % optional
-%%                 intensity => non_neg_integer(), % optional
-%%                 period => pos_integer()}        % optional
-%% child_spec() = #{id => child_id(),       % mandatory
-%%                  start => mfargs(),      % mandatory
-%%                  restart => restart(),   % optional
-%%                  shutdown => shutdown(), % optional
-%%                  type => worker(),       % optional
-%%                  modules => modules()}   % optional
+-spec init(Args) -> Return when
+	Args       :: term(),
+	SupFlags   :: supervisor:sup_flags(),
+	ChildSpecs :: [supervisor:child_spec()],
+	Return     :: ignore | {ok, {SupFlags, ChildSpecs}}.
 init([]) ->
-    SupFlags = #{strategy => one_for_one,
-                 intensity => 10,
-                 period => 10},
-    ChildSpecs = [],
-    {ok, {SupFlags, ChildSpecs}}.
-
-%% internal functions
+	SupFlags = #{strategy => one_for_one,
+				 intensity => 10,
+				 period => 10},
+	ChildSpecs = [],
+	{ok, {SupFlags, ChildSpecs}}.

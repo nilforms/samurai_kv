@@ -21,23 +21,32 @@
 
 -behaviour(application).
 
--export([start/2, stop/1]).
+-export([
+		 start/2, 
+         stop/1
+		]).
 
+-spec start(StartType, StartArgs) -> Return when
+	StartType :: application:start_type(), 
+	StartArgs :: term(),
+	Return    ::   {'ok', pid()} 
+                 | {'ok', pid(), term()} 
+                 | {'error', term()}.
 start(_StartType, _StartArgs) ->
     {ok, Port} = application:get_env(samurai_kv_http_api, http_port),
     Dispatch = cowboy_router:compile([
-		{'_', [{"/", samurai_kv_http_api_rest_urlenc_handler, []},
-			{"/cache", samurai_kv_http_api_rest_urlenc_handler, []},
-			{"/cache_json", samurai_kv_http_api_rest_json_handler, []}
-		]}
+		{'_', 
+			[{"/api/keys/[:key]", samurai_kv_http_api_rest_handler, []}]
+		}
 	]),
 	{ok, _} = cowboy:start_clear(samurai_http, 
-								[{port, Port}], 
-								#{env => #{dispatch => Dispatch}, 
-								protocols => [http|http2]}),
+								 [{port, Port}], 
+								 #{env => 
+									#{dispatch => Dispatch}, 
+								 protocols => [http]}),
     samurai_kv_http_api_sup:start_link().
 
+-spec stop(State) -> ok when
+	State :: term().
 stop(_State) ->
-    ok.
-
-%% internal functions
+	ok.

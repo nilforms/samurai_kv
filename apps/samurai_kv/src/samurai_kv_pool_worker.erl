@@ -20,114 +20,168 @@
 
 -module(samurai_kv_pool_worker).
 
+-include("samurai_kv.hrl").
+
 -behaviour(gen_server).
 
+%% Gen Server callbacks
 -export([start_link/1]).
-
--export([init/1, 
-        handle_call/3, 
-        handle_cast/2, 
-        handle_info/2, 
-        terminate/2]).
--export([insert/3,
-         delete/2,
-         connect/1,
-         disconnect/1,
-         get/2,
-         get_all/1
-]).
+-export([
+		init/1, 
+		handle_call/3, 
+		handle_cast/2, 
+		handle_info/2, 
+		terminate/2
+		]).
+%% API functions
+-export([
+		add/2,
+		update/2,
+		delete/1,
+		get/1,
+		get_all/0
+		]).
 
 -define(SERVER, ?MODULE).
 
--record(state, {limit}).
+%% State of the Pool dispatcher
+-type state() :: #{limit => non_neg_integer()}.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% 
+%%% API
+%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-connect(Client) ->
-    gen_server:call(?SERVER,{connect, Client}).
-disconnect(Client) ->
-    gen_server:call(?SERVER, {disconnect, Client}).
-insert(Client, Key, Value) when is_binary(Value) ->
-    case ets:lookup(subscriptions, Client) of
-        [] -> {error, <<"Client not connected">>};
-        [{_, Worker}] ->
-            gen_server:call(Worker,{insert, Key, Value})
-    end;
-insert(_, _, _) ->
-    {error, <<"Wrong value format">>}.
+-spec add(Key, Value) -> Result when
+    Key    :: binary(),
+    Value  :: binary(),
+    Result :: map().
+add(Key, Value) ->
+	procedure(?FUNCTION_NAME, [Key, Value]).   
 
-delete(Client, Key) ->
-    case ets:lookup(subscriptions, Client) of
-        [] -> {error, <<"Client not connected">>};
-        [{_, Worker}] ->
-            gen_server:call(Worker,{delete, Key})
-    end.
-get(Client, Key) ->
-    case ets:lookup(subscriptions, Client) of
-        [] -> {error, <<"Client not connected">>};
-        [{_, Worker}] ->
-            gen_server:call(Worker, {get, Key})
-    end.
-get_all(Client) ->
-    case ets:lookup(subscriptions, Client) of
-        [] -> {error, <<"Client not connected">>};
-        [{_, Worker}] ->
-            gen_server:call(Worker, get_all)
-    end.
+-spec update(Key, Value) -> Result when
+	Key    :: binary(),
+	Value  :: binary(),
+	Result :: map().
+update(Key, Value) ->
+	procedure(?FUNCTION_NAME, [Key, Value]).   
+
+-spec delete(Key) -> Result when
+	Key    :: binary(),
+	Result :: map().
+delete(Key) ->
+	procedure(?FUNCTION_NAME, [Key]).
+
+-spec get(Key) -> Result when
+	Key    :: binary(),
+	Result :: map().
+get(Key) ->
+	procedure(?FUNCTION_NAME, [Key]).
+
+-spec get_all() -> Result when
+	Result :: map() | [map()].
+get_all() ->
+	procedure(?FUNCTION_NAME, []).
+
+-spec start_link(Args) -> StartRet when
+	Args     :: term(),
+	StartRet :: gen_server:start_ret().
 start_link(Args) ->
-    gen_server:start_link({local,?SERVER}, ?MODULE, Args,[]). 
+	gen_server:start_link({local,?SERVER}, ?MODULE, Args,[]). 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% 
+%%% Gen Server Callbacks
+%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec init(Args) -> Return when
+    Args   :: term(),
+    Return :: {ok, state()}.
 init(Args) ->
-    Limit = case ets:info(subscriptions, size) of
-        0 -> proplists:get_value(num_connections, Args);
-        Num -> Num
-    end,
-    
-    {ok,#state{limit = Limit}}.
-handle_call({connect, _}, _From, #state{limit = 0} = State) ->
-    {reply,{error, <<"Number of Clients exceeded">>}, State};
+	Limit = proplists:get_value(num_connections, Args),
+	{ok, #{limit => Limit}}.
 
-handle_call({connect, Client}, _From, #state{limit = Limit} = State) ->
-    {Reply, NewLimit} = case ets:lookup(subscriptions, Client) of 
-                            [] ->
-                                {ok, W} = samurai_kv_storage_sup:start_worker(),
-                                erlang:monitor(process, W),
-                                ets:insert(subscriptions, {Client, W}),
-                                {{ok, <<"Client connected">>}, Limit-1};
-                            _->
-                                {{error, <<"Client already connected">>}, Limit}
-                        end,
-    {reply,Reply, State#state{limit = NewLimit}};
-handle_call({disconnect, Client}, _From, #state{limit = Limit}=State) ->
-    {Reply, NewState}  = case ets:lookup(subscriptions,Client) of 
-        [] -> { {error, <<"Empty connection">>}, State};
-        [{Client, W}] ->
-            samurai_kv_storage_sup:stop_worker(W),
-            ets:delete(subscriptions, Client),
-            {{ok, <<"Client disconnected">>}, State#state{limit = Limit +1}}
-    end, 
-    {reply,Reply, NewState};
-handle_call(Request, _From, State) ->
-    logger:info("Request ~p  from ~p received", [Request,_From]),
-    {reply, ok, State}.
+-spec handle_call(Request, From, State) -> Return when
+	Request :: term(),
+	From    :: gen_server:from(),
+	State   :: state(),
+	Return  :: {reply, term(), state()}.
+handle_call(get_worker, _From, #{limit := 0} = State) ->
+	{reply, {error, <<"too many connections">>}, State};
+handle_call(get_worker, _From, #{limit := Limit} = State) ->
+	Reply = case samurai_kv_storage_sup:start_worker() of
+				{ok, W} -> 
+					erlang:monitor(process, W),
+					W;
+				{ok, W, _Info} -> 
+					erlang:monitor(process, W),
+					W;
+				Error -> 
+					Error
+			end,
+	{reply, Reply, State#{limit => Limit - 1}};
+handle_call(Request, From, State) ->
+	logger:info("Request ~p  from ~p received", [Request, From]),
+	{reply, ok, State}.
 
+-spec handle_cast(Msg, State) -> Return when
+	Msg    :: term(),
+	State  :: state(),
+	Return :: {noreply, state()}.
 handle_cast(Msg, State) ->
-    logger:info("Request ~p received", [Msg]),
-    {noreply, State}.
-handle_info({'DOWN', Mref, process, W, Reason}, #state{limit = Limit} = State) ->
-    erlang:demonitor(Mref),
-    case ets:match(subscriptions, {'$1', W}) of
-        [] -> ok;
-        [[Client]] -> 
-            samurai_kv_storage_sup:stop_worker(W),
-            ets:delete(subscriptions, Client),
-            logger:info("Client ~p disconnected because of reason ~p", [Client, Reason])
-    end,
-    {noreply, State#state{limit = Limit +1}};
-  
-handle_info(Info, State) ->
-    logger:info("Info ~p received", [Info]),
-    {noreply, State}.
+	logger:info("Request ~p received", [Msg]),
+	{noreply, State}.
 
-terminate(Reason, _) ->
-    logger:info("Process ~p terminated with reason ~p", [?MODULE, Reason]),
-    ok.
+-spec handle_info(Info, State) -> Return when
+	Info   :: term(),
+	State  :: state(),
+	Return :: {noreply, state()}.
+handle_info({'DOWN', Mref, process, W, _Reason}, #{limit := Limit} = State) ->
+	erlang:demonitor(Mref),
+	samurai_kv_storage_sup:stop_worker(W),
+	{noreply, State#{limit => Limit + 1}};
+handle_info(Info, State) ->
+	logger:info("Info ~p received", [Info]),
+	{noreply, State}.
+
+-spec terminate(Reason, State) -> ok when
+	Reason :: term(),
+	State  :: state().
+terminate(Reason, _State) ->
+	logger:info("Process ~p terminated with reason ~p", [?MODULE, Reason]),
+	ok.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% 
+%%% Internal Functions
+%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%-------------------------------------------------------------------
+-spec procedure(Method, Args) -> Result when
+	Method :: any(),
+	Args   :: [binary()],
+	Result :: map().
+%% @doc
+%% Performs DB procedure corresponding to certain method
+%% 
+%% @end
+%%%-------------------------------------------------------------------
+procedure(Method, Args) ->
+	Request = case Args of
+		[] -> 
+			Method;
+		ArgList ->
+			list_to_tuple([Method | ArgList])
+		end,
+	case gen_server:call(?SERVER, get_worker) of
+		Worker when is_pid(Worker) ->
+			gen_server:call(Worker, Request);
+		{error, Error} ->
+			#{error => Error};
+		Msg ->
+			logger:error("Strange error ~p occurs", [Msg]),
+			#{error => "storage doomed"}
+	end.
