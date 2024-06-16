@@ -1,8 +1,15 @@
 samurai_kv
 =====
 
-Simple in-memory key-value storage engine written in erlang. The storage uses Erlang Term Storage as a base, and supports multiple
-councrrent access from defferent clients.
+Simple in-memory key-value storage engine written in Erlang. The storage uses Erlang Term Storage as a backend, and supports
+concurrent access from different clients.
+
+# Requirements
+Currently tested on the following environment
+
+- OS: Ubuntu 20.04
+- OTP: 26
+- rebar3: 3.23.0
 
 # Build
 
@@ -28,79 +35,37 @@ NUM_CONNECTIONS - is an upper limit of clients, which can connect to the storage
 
 HTTP_PORT - is a listening port of HTTP reference point
 
-# Accessing storage
+# Example use
 
-## Erlang API
+You can use the following commands to access the storage from linux command line:
 
-The functions of the storage access and management are presented in samurai_kv.erl module:
-```
-connect(Client) - connects the Client to storage
-insert(Client, Key, Value) - adds new Key-Value pair to storage or updates Value of exisitng key, if Client is connected
-delete(Client, Key) - removes the Key from storage, if Client is connected
-get(Client, Key) - returns Key from storage if Key exists, and if Client is connected
-get_all(Client) - returns all Key-Value pairs for Client
-disconnect(Client) - disconnects Client from storage 
-```
-
-## HTTP API
-
-HTTP API allows insert and get spesific keys from storage in on-demand manner. The client is automatically connected to storage
-via peer (ip-address and port), and automatically disconnected after access procedure evaluation. 
-
-### JSON requests
-The key-value pair may be inserted or updated as follows:
-```
-curl -d '{"nam":"linux"}' -N -H "Content-Type:application/json" -X POST  -i  http://localhost:8181/cache_json/
-```
-where {"nam":"linux"} - is an exmaple JSON with key-value pair to be stored. If kv-pair was not in storage before
-it will be added, otherwise the existing pair for certain key will be overriden by new value 
-
-Access to value of specific key may be got as follows
+* adding the KV pair:
 
 ```
-curl -s -N -d '{"key":"nam"}' -H "Content-Type:application/json" -X GET  -i  http://localhost:8181/cache_json
-```
-where "nam" is an example name of key to be accessed. Remember, that keyword "key" is mandatory when accessing 
-specific key.
-
-To remove a specific key-value pair from strorage do the following:
-
-```
-curl -s -N -d '{"key":"nam"}' -H "Content-Type:application/json" -X DELETE  -i  http://localhost:8181/cache_json
-``` 
-where "nam" is an example name of key to be accessed. Remember, that keyword "key" is mandatory when accessing 
-specific key.
-
-### URL-enocoded requests
-
-The url-encoded requests are equivalent to JSON-encoded requests described above and are as follows:
-
-* insertion/update:
-```
-curl -d 'key=nam' -H "Content-Type:application/x-www-form-urlencoded"  -X POST  -i  http://localhost:8181/cache_json/
+curl -i --data-urlencode "key=foo" --data-urlencode "value=bar" -H "Accept: application/json" -X POST localhost:8181/api/keys/
 ```
 
-* retrieval
+* updating the KV-pair
 
 ```
-curl -s -N -d 'key=nam' -H "Content-Type:application/x-www-form-urlencoded"  -X GET  -i  http://localhost:8181/cache_json
-```
+curl -i --data-urlencode  --data-urlencode "value=bar" -H "Accept: application/json" -X PUT localhost:8181/api/keys/foo
 
-* removal
-
-```
-curl -s -N -d 'key=nam' -H "Content-Type:application/x-www-form-urlencoded" -X DELETE  -i  http://localhost:8181/cache_json
 ``` 
 
-# Testing
+* retrieval of specific KV-pair
 
-To launch the tests execute  
 ```
-rebar3 as test ct --verbose
+curl -i -X GET localhost:8181/api/keys/foo
 ```
-command in the project directory. In total eight tests have to be passed succesfully.
 
-Currently two test suites are implemented:
+* retrieval of all KV-pairs
 
-* REST API positive suite which tests insertion, update, retrieval and removal of the respective key-value pairs when the correct http request was sent
-* REST API negative suite which tests insertion/update, retrieval and removal of the respective key-value pairs when the incorrect http request was sent, and retrieval of the pair which has not been stored 
+```
+curl -i -X GET localhost:8181/api/keys/
+```
+
+* remove a KV-pair
+
+```
+curl -i -X DELETE localhost:8181/api/keys/foo
+``` 
