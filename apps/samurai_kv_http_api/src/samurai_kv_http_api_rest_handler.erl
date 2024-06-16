@@ -78,8 +78,8 @@ content_types_accepted(Req, State) ->
 content_types_provided(Req, State) ->
 	{[
 		{{<<"application">>, <<"json">>, '*'}, samurai_to_json},
-		{{<<"application">>, <<"problem+json">>, '*'}, url_to_samurai},
-		{{<<"application">>, <<"problem+json">>, '*'}, resource_exists}
+		{{<<"application">>, <<"json">>, '*'}, url_to_samurai},
+		{{<<"application">>, <<"json">>, '*'}, resource_exists}
 	], Req, State}.
 
 -spec valid_entity_length(Req, State) -> Return when
@@ -108,7 +108,7 @@ resource_exists(#{method := Method, bindings := #{key := Key}} = Req, State) whe
 resource_exists(#{method := Method} = Req, State) ->
 	case cowboy_req:binding(key, Req) of
 		undefined when Method =:= <<"DELETE">> ->
-			RespBody = to_json(#{error => "key not porvided"}),
+			RespBody = to_json(#{error => <<"key not provided">>}),
 			{false, Req#{resp_body => RespBody}, State};
 		_ ->
 			{true, Req, State}
@@ -146,7 +146,7 @@ url_to_samurai(#{method := <<"POST">>} = Req, State) ->
 					respond_service_unavailable(Rsp, Req, State)
 				end;
 		_ ->
-			RespBody = to_json(#{error => "wrong body format"}),
+			RespBody = to_json(#{error => <<"wrong body format">>}),
 			{false, Req#{resp_body => RespBody}, State}
 	end;
 url_to_samurai(#{method := <<"PUT">>, bindings := #{key := Key}} = Req, State) ->
@@ -162,11 +162,11 @@ url_to_samurai(#{method := <<"PUT">>, bindings := #{key := Key}} = Req, State) -
 					respond_service_unavailable(Rsp, Req, State)
 				end;
 		_ ->
-			RespBody = to_json(#{error => "wrong body format"}),
+			RespBody = to_json(#{error => <<"wrong body format">>}),
 			{false, Req#{resp_body => RespBody}, State}
 	end;
 url_to_samurai(Req, State)->
-	respond_im_teapot(#{error => "you're a teapot ^_^"}, Req, State).
+	respond_im_teapot(#{error => <<"you're a teapot ^_^">>}, Req, State).
 
 -spec samurai_to_json(Req, State) -> Result when
 	Req    :: cowboy_req:req(),
